@@ -1,0 +1,259 @@
+// SPDX-License-Identifier: AGPL-3.0
+pragma solidity ^0.8.12;
+pragma experimental ABIEncoderV2;
+
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import "./interfaces/IERC20Extended.sol";
+import {BaseStrategyInitializable} from "@yearnvaults/contracts/BaseStrategy.sol";
+
+interface JointAPI {
+    function closePositionReturnFunds() external;
+
+    function openPosition() external;
+
+    function providerA() external view returns (address);
+
+    function providerB() external view returns (address);
+
+    function estimatedTotalProviderAssets(address provider)
+        external
+        view
+        returns (uint256);
+
+    function WETH() external view returns (address);
+
+    function router() external view returns (address);
+
+    function migrateProvider(address _newProvider) external;
+
+    function shouldEndEpoch() external view returns (bool);
+
+    function shouldStartEpoch() external view returns (bool);
+
+    function dontInvestWant() external view returns (bool);
+}
+
+contract ProviderStrategy is BaseStrategyInitializable {
+    using SafeERC20 for IERC20;
+    using Address for address;
+
+    address public joint;
+
+    bool public forceLiquidate;
+    bool public launchHarvest;
+
+    constructor(address _vault) public BaseStrategyInitializable(_vault) {}
+
+    function name() external view override returns (string memory) {
+        return
+            string(
+                abi.encodePacked(
+                    "Strategy_ProviderOf",
+                    IERC20Extended(address(want)).symbol(),
+                    "To",
+                    IERC20Extended(address(joint)).name()
+                )
+            );
+    }
+
+    function estimatedTotalAssets() public view override returns (uint256) {
+        return
+            want.balanceOf(address(this)) +
+            JointAPI(joint).estimatedTotalProviderAssets(address(this));
+    }
+
+    function totalDebt() public view returns (uint256) {
+        return vault.strategies(address(this)).totalDebt;
+    }
+
+    function setLaunchHarvest(bool _newLaunchHarvest) external onlyVaultManagers {
+        launchHarvest = _newLaunchHarvest;
+    }
+
+    function prepareReturn(uint256 _debtOutstanding)
+        internal
+        override
+        returns (
+            uint256 _profit,
+            uint256 _loss,
+            uint256 _debtPayment
+        )
+    {
+        if (launchHarvest) {
+            launchHarvest = false;
+        }
+        // NOTE: this strategy is operated following epochs. These begin during adjustPosition and end during prepareReturn
+        // The Provider will always ask the joint to close the position before harvesting
+        JointAPI(joint).closePositionReturnFunds();
+
+        // After closePosition, the provider will always have funds in its own balance (not in joint)
+        uint256 _totalDebt = totalDebt();
+        uint256 totalAssets = balanceOfWant();
+
+        if (_totalDebt > totalAssets) {
+            // we have losses
+            _loss = _totalDebt - totalAssets;
+        } else {
+            // we have profit
+            _profit = totalAssets - _totalDebt;
+        }
+
+        uint256 amountAvailable = totalAssets;
+        uint256 amountRequired = _debtOutstanding + _profit;
+
+        if (amountRequired > amountAvailable) {
+            if (_debtOutstanding > amountAvailable) {
+                // available funds are lower than the repayment that we need to do
+                _profit = 0;
+                _debtPayment = amountAvailable;
+                // we dont report losses here as the strategy might not be able to return in this harvest
+                // but it will still be there for the next harvest
+            } else {
+                // NOTE: amountRequired is always equal or greater than _debtOutstanding
+                // important to use amountAvailable just in case amountRequired is > amountAvailable
+                _debtPayment = _debtOutstanding;
+                _profit = amountAvailable - _debtPayment;
+            }
+        } else {
+            _debtPayment = _debtOutstanding;
+            // profit remains unchanged unless there is not enough to pay it
+            if (amountRequired - _debtPayment < _profit) {
+                _profit = amountRequired - _debtPayment;
+            }
+        }
+    }
+
+    function harvestTrigger(uint256 callCost)
+        public
+        view
+        override
+        returns (bool)
+    {
+        // Delegating decision to joint
+        return
+            (JointAPI(joint).shouldStartEpoch() && balanceOfWant() > 0) ||
+            JointAPI(joint).shouldEndEpoch() || launchHarvest;
+    }
+
+    function dontInvestWant() public view returns (bool) {
+        // Delegating decision to joint
+        return JointAPI(joint).dontInvestWant();
+    }
+
+    function adjustPosition(uint256 _debtOutstanding) internal override {
+        if (emergencyExit || dontInvestWant()) {
+            return;
+        }
+
+        // Using a push approach (instead of pull)
+        uint256 wantBalance = balanceOfWant();
+        if (wantBalance > 0) {
+            want.safeTransfer(joint, wantBalance);
+        }
+
+        JointAPI(joint).openPosition();
+    }
+
+    function liquidatePosition(uint256 _amountNeeded)
+        internal
+        override
+        returns (uint256 _liquidatedAmount, uint256 _loss)
+    {
+        uint256 availableAssets = want.balanceOf(address(this));
+        if (_amountNeeded > availableAssets) {
+            _liquidatedAmount = availableAssets;
+            _loss = _amountNeeded - availableAssets;
+        } else {
+            _liquidatedAmount = _amountNeeded;
+        }
+    }
+
+    function prepareMigration(address _newStrategy) internal override {
+        JointAPI(joint).migrateProvider(_newStrategy);
+    }
+
+    function protectedTokens()
+        internal
+        view
+        override
+        returns (address[] memory)
+    {}
+
+    function balanceOfWant() public view returns (uint256) {
+        return IERC20(want).balanceOf(address(this));
+    }
+
+    function setJoint(address _joint) external onlyGovernance {
+        require(
+            JointAPI(_joint).providerA() == address(this) ||
+                JointAPI(_joint).providerB() == address(this)
+        ); // dev: providers uncorrectly set
+        require(healthCheck != address(0)); // dev: healthCheck
+        joint = _joint;
+    }
+
+    function setForceLiquidate(bool _forceLiquidate)
+        external
+        onlyEmergencyAuthorized
+    {
+        forceLiquidate = _forceLiquidate;
+    }
+
+    function liquidateAllPositions()
+        internal
+        virtual
+        override
+        returns (uint256 _amountFreed)
+    {
+        uint256 expectedBalance = estimatedTotalAssets();
+        JointAPI(joint).closePositionReturnFunds();
+        _amountFreed = balanceOfWant();
+        // NOTE: we accept a 1% difference before reverting
+        require(
+            forceLiquidate || (expectedBalance * 9_900) / 10_000 < _amountFreed,
+            "!liquidation"
+        );
+    }
+
+    function ethToWant(uint256 _amtInWei)
+        public
+        view
+        override
+        returns (uint256)
+    {
+        // NOTE: using joint params to avoid changing fixed values for other chains
+        // gas price is not important as this will only be used in triggers (queried from off-chain)
+        return tokenToWant(JointAPI(joint).WETH(), _amtInWei);
+    }
+
+    function tokenToWant(address token, uint256 amount)
+        internal
+        view
+        returns (uint256)
+    {
+        // if (amount == 0 || address(want) == token) {
+        return amount;
+        // }
+    }
+
+    function getTokenOutPath(address _token_in, address _token_out)
+        internal
+        view
+        returns (address[] memory _path)
+    {
+        bool is_weth = _token_in == address(JointAPI(joint).WETH()) ||
+            _token_out == address(JointAPI(joint).WETH());
+        _path = new address[](is_weth ? 2 : 3);
+        _path[0] = _token_in;
+
+        if (is_weth) {
+            _path[1] = _token_out;
+        } else {
+            _path[1] = address(JointAPI(joint).WETH());
+            _path[2] = _token_out;
+        }
+    }
+}

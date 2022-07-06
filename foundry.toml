@@ -5,7 +5,8 @@ libs = ['lib']
 remappings = [
     'forge-std/=lib/forge-std/src/',
     '@yearnvaults/=lib/yearn-vaults/',
-    '@openzeppelin/=lib/openzeppelin-contracts/'
+    '@openzeppelin/=lib/openzeppelin-contracts/',
+    "@uniswap/=lib/v3-core/"
 ]
 
 # See more config options https://github.com/gakonst/foundry/tree/master/config
