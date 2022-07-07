@@ -2,35 +2,36 @@
 pragma solidity ^0.8.12;
 pragma experimental ABIEncoderV2;
 
-import "../Joint.sol";
+import "../Tripod.sol";
 
-abstract contract NoHedgeJoint is Joint {
+abstract contract NoHedgeTripod is Tripod {
     constructor(
         address _providerA,
         address _providerB,
         address _weth,
         address _pool
-    ) Joint(_providerA, _providerB, _weth, _pool) {}
+    ) Tripod(_providerA, _providerB, _weth, _pool) {}
 
-    function getHedgeBudget(address token)
+    function getHedgeBudget(address /*token*/)
         public
-        view
+        pure
         override
         returns (uint256)
     {
         return 0;
     }
 
-    function getTimeToMaturity() public view returns (uint256) {
+    function getTimeToMaturity() public pure returns (uint256) {
         return 0;
     }
 
-    function getHedgeProfit() public view override returns (uint256, uint256) {
+    function getHedgeProfit() public pure override returns (uint256, uint256) {
         return (0, 0);
     }
 
     function hedgeLP()
         internal
+        pure
         override
         returns (uint256 costA, uint256 costB)
     {
@@ -38,13 +39,13 @@ abstract contract NoHedgeJoint is Joint {
         return (0, 0);
     }
 
-    function closeHedge() internal override {
+    function closeHedge() internal pure override {
         // NO HEDGE
         return;
     }
 
     // this function is called by Joint to see if it needs to stop initiating new epochs due to too high volatility
-    function _autoProtect() internal view override returns (bool) {
+    function _autoProtect() internal pure override returns (bool) {
         return false;
     }
 }

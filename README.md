@@ -1,3 +1,7 @@
+# This has been adapted from the previous Join Strategies found here:
+
+https://github.com/fp-crypto/joint-strategy/tree/fp-univ3
+
 # Yearn Strategy Foundry Mix
 
 ## What you'll find here
