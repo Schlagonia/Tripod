@@ -10,7 +10,7 @@ import "./interfaces/IERC20Extended.sol";
 import {BaseStrategyInitializable} from "@yearnvaults/contracts/BaseStrategy.sol";
 
 interface TripodAPI {
-    function closePositionReturnFunds() external;
+    function closeAllPositions() external;
 
     function providerA() external view returns (address);
 
@@ -212,7 +212,11 @@ contract ProviderStrategy is BaseStrategyInitializable {
         returns (uint256 _amountFreed)
     {
         uint256 expectedBalance = estimatedTotalAssets();
-        TripodAPI(tripod).closePositionReturnFunds();
+        TripodAPI(tripod).closeAllPositions();
+	    uint256 amount = want.balanceOf(tripod);
+        if (amount > 0) {
+            want.safeTransferFrom(tripod, address(this), amount);
+        }
         _amountFreed = balanceOfWant();
         // NOTE: we accept a 1% difference before reverting
         require(
