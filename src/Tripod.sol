@@ -294,16 +294,20 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available for providers to close the joint position and return the funds to each 
+     *  Function available for providers to close the joint position and can then pull funds back
      * provider strategy
      */
-    function closePositionReturnFunds() external onlyProviders {
-        // Check if it needs to stop starting new epochs after finishing this one.
-        // _autoProtect is implemented in children
-        if (_autoProtect() && !autoProtectionDisabled) {
-            dontInvestWant = true;
-        }
+    function closeAllPositions() external onlyProviders {
+        _closeAllPositions();
+    }
 
+	
+    /*
+     * @notice internal function to be called during harvest or by a provider
+     *  will pull out of all LP positions, sell all rewards and rebalance back to as even as possible
+     *  Will fail if we do not get enough of each asset based on maxPercentLoss
+    */
+    function _closeAllPositions() internal {
         // Check that we have a position to close
         if (invested[tokenA] == 0 || invested[tokenB] == 0 || invested[tokenC] == 0) {
             return;
@@ -329,7 +333,7 @@ abstract contract Tripod {
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
 
         // Check that we have returned with no losses
-        require(  //////////May want to add unchecked for all the math
+        require(  //////////May want to add unchecked for all the math /// Need to base of a diffeent number than total Debt()
             balanceOfA() >=
                 (providerA.totalDebt() *
                     (RATIO_PRECISION - maxPercentageLoss)) /
@@ -348,20 +352,8 @@ abstract contract Tripod {
                 (providerC.totalDebt() *
                     (RATIO_PRECISION - maxPercentageLoss)) /
                     RATIO_PRECISION,
-            "!wrong-balanceB"
+            "!wrong-balanceC"
         );
-
-        //Harvest all three providers
-        providerA.harvest();
-        providerB.harvest();
-        providerC.harvest();
-
-        //Check if we should reopen position
-        if(dontInvestWant) {
-            _returnLooseToProviders();
-        } else {
-            _openPosition();
-        }
     }
     
     /*
@@ -406,7 +398,25 @@ abstract contract Tripod {
 
     // Keepers will claim and sell rewards mid-epoch (otherwise we sell only in the end)
     function harvest() external virtual onlyKeepers {
-        getReward();
+        // Check if it needs to stop starting new epochs after finishing this one.
+        // _autoProtect is implemented in children
+        if (_autoProtect() && !autoProtectionDisabled) {
+            dontInvestWant = true;
+        }
+    	//Exits all positions into equal amounts
+        _closeAllPositions();
+
+        //Harvest all three providers
+        providerA.harvest();
+        providerB.harvest();
+        providerC.harvest();
+
+        //Check if we should reopen position
+        if(dontInvestWant) {
+            _returnLooseToProviders();
+        } else {
+            _openPosition();
+        }
     }
 
     function harvestTrigger(uint256 /*callCost*/) external view virtual returns (bool) {
