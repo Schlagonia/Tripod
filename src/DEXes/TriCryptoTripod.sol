@@ -37,15 +37,17 @@ contract CurveTripod is NoHedgeTripod {
      *  Constructor, only called during original deploy
      * @param _providerA, provider strategy of tokenA
      * @param _providerB, provider strategy of tokenB
+     * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, Uni V3 pool to LP
      */
     constructor(
         address _providerA,
         address _providerB,
+        address _providerC,
         address _referenceToken,
         address _pool
-    ) NoHedgeTripod(_providerA, _providerB, _referenceToken, _pool) {
+    ) NoHedgeTripod(_providerA, _providerB, _providerC, _referenceToken, _pool) {
         _initializeCurveTripod();
     }
 
@@ -54,16 +56,18 @@ contract CurveTripod is NoHedgeTripod {
      *  Constructor equivalent for clones, initializing the joint and the specifics of the strat
      * @param _providerA, provider strategy of tokenA
      * @param _providerB, provider strategy of tokenB
+	 * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, Uni V3 pool to LP
      */
     function initialize(
         address _providerA,
         address _providerB,
+        address _providerC,
         address _referenceToken,
         address _pool
     ) external {
-        _initialize(_providerA, _providerB, _referenceToken, _pool);
+        _initialize(_providerA, _providerB, _providerC, _referenceToken, _pool);
         _initializeCurveTripod();
     }
 
@@ -91,6 +95,7 @@ contract CurveTripod is NoHedgeTripod {
      *  Cloning function to migrate/ deploy to other pools
      * @param _providerA, provider strategy of tokenA
      * @param _providerB, provider strategy of tokenB
+     * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, Uni V3 pool to LP
      * @return newJoint, address of newly deployed joint
@@ -98,6 +103,7 @@ contract CurveTripod is NoHedgeTripod {
     function cloneCurveTripod(
         address _providerA,
         address _providerB,
+        address _providerC,
         address _referenceToken,
         address _pool
     ) external returns (address newJoint) {
@@ -122,6 +128,7 @@ contract CurveTripod is NoHedgeTripod {
         CurveTripod(newJoint).initialize(
             _providerA,
             _providerB,
+            _providerC,
             _referenceToken,
             _pool
         );
@@ -163,7 +170,7 @@ contract CurveTripod is NoHedgeTripod {
      * @param pool, new pool value to use
      */
     function setPool(address _pool) external onlyVaultManagers {
-        require(investedA == 0 && investedB == 0, "Invested still");
+        require(invested[tokenA] == 0 && invested[tokenB] == 0 && invested[tokenC] == 0, "Invested still");
         //Sanity check, at least one should not be 0
         require(_getCRVPoolIndex(tokenA, ICurveFi(_pool)) != 0 || _getCRVPoolIndex(tokenB, ICurveFi(_pool)) != 0, "wrong pool");
         pool = _pool;
