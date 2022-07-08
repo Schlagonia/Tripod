@@ -23,8 +23,6 @@ interface TripodAPI {
         view
         returns (uint256);
 
-    function router() external view returns (address);
-
     function migrateProvider(address _newProvider) external;
 
     function shouldEndEpoch() external view returns (bool);
@@ -216,12 +214,15 @@ contract ProviderStrategy is BaseStrategyInitializable {
         returns (uint256 _amountFreed)
     {
         uint256 expectedBalance = estimatedTotalAssets();
+
         TripodAPI(tripod).closeAllPositions();
+
 	    uint256 amount = want.balanceOf(tripod);
         if (amount > 0) {
             want.safeTransferFrom(tripod, address(this), amount);
         }
         _amountFreed = balanceOfWant();
+        
         // NOTE: we accept a 1% difference before reverting
         require(
             forceLiquidate || (expectedBalance * 9_900) / 10_000 < _amountFreed,

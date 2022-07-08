@@ -59,6 +59,9 @@ abstract contract Tripod {
     //Mapping of the Amounts that actually go into the LP position
     mapping(address => uint256) public invested;
 
+    //Address of the Keeper for this strategy
+    address public keeper;
+
     // Boolean values protecting against re-investing into the pool
     bool public dontInvestWant;
     bool public autoProtectionDisabled;
@@ -119,14 +122,14 @@ abstract contract Tripod {
 
     function isKeeper() internal view returns (bool) {
         return
-            (msg.sender == providerA.keeper()) ||
-            (msg.sender == providerB.keeper());
+            (msg.sender == keeper);
     }
 
     function isProvider() internal view returns (bool) {
         return
             msg.sender == address(providerA) ||
-            msg.sender == address(providerB);
+            msg.sender == address(providerB) ||
+            msg.sender == address(providerC);
     }
 
     /*
@@ -170,6 +173,7 @@ abstract contract Tripod {
         providerC = ProviderStrategy(_providerC);
         referenceToken = _referenceToken;
         pool = _pool;
+        keeper = msg.sender;
 
         // NOTE: we let some loss to avoid getting locked in the position if something goes slightly wrong
         maxPercentageLoss = RATIO_PRECISION / 1_000; // 0.10%
@@ -211,7 +215,6 @@ abstract contract Tripod {
                 return true;
             }
         }
-
         return false;
     }
 
@@ -222,12 +225,24 @@ abstract contract Tripod {
      * @return wether to start a new epoch or not
      */
     function shouldStartEpoch() external view returns (bool) {
-        // return true if we have balance of A or balance of B while the position is closed
+        // return true if we have balance of A B and C while the position is closed
         return
-            (balanceOfA() > 0 || balanceOfB() > 0 || balanceOfC() > 0) &&
+            (balanceOfA() > 0 && balanceOfB() > 0 && balanceOfC() > 0) &&
             invested[tokenA] == 0 &&
             invested[tokenB] == 0 &&
             invested[tokenC] == 0;
+    }
+
+    /* @notice
+     *  Used to change `keeper`.
+     *  This may only be called by Vault Gov managment or current keeper.
+     * @param _keeper The new address to assign as `keeper`.
+     */
+    function setKeeper(address _keeper) 
+        external 
+        onlyKeepers 
+    {
+        keeper = _keeper;
     }
 
     /*
@@ -292,8 +307,15 @@ abstract contract Tripod {
         maxPercentageLoss = _maxPercentageLoss;
     }
 
-        // Keepers will claim and sell rewards mid-epoch (otherwise we sell only in the end)
-    function harvest() external virtual onlyKeepers {
+    /*
+    * @notice
+    *   Functions for the keepers to call
+    *   Will exit all positions and sell all rewards applicable attempting to rebalance profits
+    *   Will then call the harvest function on each Provider to avoid redundant harvests
+    *   This only sends funds back if we will not be reinvesting funds
+    *   Providers have approval to pull whatever they need
+    */
+    function harvest() external onlyKeepers {
         // Check if it needs to stop starting new epochs after finishing this one.
         // _autoProtect is implemented in children
         if (_autoProtect() && !autoProtectionDisabled) {
@@ -302,17 +324,20 @@ abstract contract Tripod {
     	//Exits all positions into equal amounts
         _closeAllPositions();
 
+        //Check if we should reopen position
+        //If not return all funds
+        if(dontInvestWant) {
+            _returnLooseToProviders();
+        }
+
         //Harvest all three providers
         providerA.harvest();
         providerB.harvest();
         providerC.harvest();
 
-        //Check if we should reopen position
-        if(dontInvestWant) {
-            _returnLooseToProviders();
-        } else {
-            _openPosition();
-        }
+        //Try and open new position
+        //If DontInvestWant == True we should have no funds and this will return;
+        _openPosition();
     }
 
     /*
@@ -331,14 +356,12 @@ abstract contract Tripod {
         // - Remove liquidity from DEX
         // - Claim pending rewards
         // - Close Hedge and receive payoff
-        // and returns current balance of tokenA and tokenB
         _closePosition();
 
         // 2. SELL REWARDS FOR WANT
         swapRewardTokens();
 
         // 3. REBALANCE PORTFOLIO
-        // Calculate rebalance operation
         // to leave the position with the initial proportions
         rebalance();
 
@@ -415,13 +438,34 @@ abstract contract Tripod {
         depositLP();
 
         // If there is loose balance, return it
-        if (balanceOfStake() != 0 || balanceOfPool() != 0) { ////Why Are we doing this?
-            _returnLooseToProviders();
-        }
+        _returnLooseToProviders();
     }
 
     function harvestTrigger(uint256 /*callCost*/) external view virtual returns (bool) {
         return balanceOfRewardToken()[0] > minRewardToHarvest;
+    }
+
+    /*
+    * @notice 
+    *  To be called inbetween harvests if applicable
+    *  Default will just claim rewards and sell out of them
+    *  It will not create a new LP position
+    *  Can be overwritten if othe logic is preffered
+    */
+    function tend() external virtual onlyKeepers {
+        //Claim all outstanding rewards
+        getReward();
+        //Swap out of all Reward Tokens
+        swapRewardTokens();
+    }
+
+    /*
+    * @notice
+    *   Trigger to tell Keepers if they should call tend()
+    *   Can be implemented with an overRide if applicable
+    */
+    function tendTrigger(uint256 /*callCost*/) external view virtual returns (bool) {
+        return false;
     }
 
     function getHedgeProfit() public view virtual returns (uint256, uint256);
@@ -429,7 +473,7 @@ abstract contract Tripod {
     /*
     * @notice
     *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
-    *   in comparision to the amounts the started with, i.e. return the same %
+    *   in comparision to the amounts the started with, i.e. return the same % return
     */
     function rebalance() internal {
         (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
@@ -451,7 +495,7 @@ abstract contract Tripod {
         //If two are higher than the average each has its diff traded to the third
         //We know all three cannot be above the avg
         //This flow allows us to keep track of exactly what tokens need to be swapped from and to 
-        // as well as how much with little extra memory used and a max of 3 if() checks
+        //as well as how much with little extra memory used and a max of 3 if() checks
         if(ratioA > avgRatio) {
 
             if (ratioB > avgRatio) {
@@ -642,6 +686,11 @@ abstract contract Tripod {
         return quoteRebalance(_aBalance, _bBalance, _cBalance);
     }
 
+    /*
+    * @notice 
+    *    This function is a fucking disaster.
+    *    But I think it wokks...
+    */
     function quoteRebalance(
         uint256 startingA,
         uint256 startingB,
@@ -671,19 +720,22 @@ abstract contract Tripod {
         if(ratioA > avgRatio) {
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
-                (change0, change1, change2) = quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
+                (change0, change1, change2) = 
+                    quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
                 return ((startingA - change0), 
                             (startingB - change1), 
                                 (startingC + change2));
             } else if (ratioC > avgRatio) {
                 //swapping A and C -> B
-                (change0, change1, change2) = quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
+                (change0, change1, change2) = 
+                    quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
                 return ((startingA - change0), 
                             (startingB + change1), 
                                 (startingC - change2));
             } else {
                 //Swapping A -> B and C
-                (change0, change1, change2) = quoteSwapOneToTwo(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC, ratioC);
+                (change0, change1, change2) = 
+                    quoteSwapOneToTwo(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC, ratioC);
                 return ((startingA - change0), 
                             (startingB + change1), 
                                 (startingC + change2));
@@ -692,13 +744,15 @@ abstract contract Tripod {
             //We know A is below avg so we just need to check C
             if (ratioC > avgRatio) {
                 //Swap B and C -> A
-                (change0, change1, change2) = quoteSwapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
+                (change0, change1, change2) = 
+                    quoteSwapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
                 return ((startingA + change2), 
                             (startingB - change0), 
                                 (startingC - change1));
             } else {
                 //swapping B -> C and A
-                (change0, change1, change2) = quoteSwapOneToTwo(avgRatio, tokenB, ratioB, tokenA, ratioA, tokenC, ratioC);
+                (change0, change1, change2) = 
+                    quoteSwapOneToTwo(avgRatio, tokenB, ratioB, tokenA, ratioA, tokenC, ratioC);
                 return ((startingA + change1), 
                             (startingB - change0), 
                                 (startingC + change2));
@@ -706,7 +760,8 @@ abstract contract Tripod {
         } else {
             //We know A and B are below so C has to be the only one above the avg
             //swap C -> A and B
-            (change0, change1, change2) = quoteSwapOneToTwo(avgRatio, tokenC, ratioC, tokenA, ratioA, tokenB, ratioB);
+            (change0, change1, change2) = 
+                quoteSwapOneToTwo(avgRatio, tokenC, ratioC, tokenA, ratioA, tokenB, ratioB);
             return ((startingA + change1), 
                         (startingB + change2), 
                             (startingC - change0));
@@ -880,6 +935,7 @@ abstract contract Tripod {
     /*
      * @notice
      *  Function available internally swapping amounts necessary to swap rewards
+     *  This can be overwritten in order to apply custom reward token swaps
      */
     function swapRewardTokens()
         internal
@@ -892,7 +948,7 @@ abstract contract Tripod {
         for (uint256 i = 0; i < _rewardTokens.length; i++) {
             address reward = _rewardTokens[i];
             uint256 _rewardBal = IERC20(reward).balanceOf(address(this));
-            // If the reward token is either A or B, don't swap
+            // If the reward token is either A B or C, don't swap
             if (reward == _tokenA || reward == _tokenB || reward == _tokenC || _rewardBal == 0) {
                 continue;
             // If the referenceToken is either A B or C, swap rewards against it 
@@ -901,7 +957,7 @@ abstract contract Tripod {
             } else {
                 // Assume that position has already been liquidated
                 //Instead this should just return the token with the lowest ratio
-                (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(   //Can create a new function that is swapRewardToken() that can either implement this logic or pick a token to swap to based on liquidity
+                (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
                     balanceOfA(),
                     balanceOfB(),
                     balanceOfC()
@@ -1109,20 +1165,28 @@ abstract contract Tripod {
     /*
      * @notice
      *  Function available to providers to change the provider addresses
+     *  will decrease the allowance for old and increase for new for applicable token
      * @param _newProvider, new address of provider
      */
     function migrateProvider(address _newProvider) external onlyProviders {
         ProviderStrategy newProvider = ProviderStrategy(_newProvider);
         address providerWant = address(newProvider.want());
         if (providerWant == tokenA) {
+            IERC20(tokenA).safeApprove(address(providerA), 0);
+            IERC20(tokenA).safeApprove(_newProvider, type(uint256).max);
             providerA = newProvider;
         } else if (providerWant == tokenB) {
+            IERC20(tokenB).safeApprove(address(providerB), 0);
+            IERC20(tokenB).safeApprove(_newProvider, type(uint256).max);
             providerB = newProvider;
         } else if(providerWant == tokenC) {
+            IERC20(tokenC).safeApprove(address(providerC), 0);
+            IERC20(tokenC).safeApprove(_newProvider, type(uint256).max);
             providerC = newProvider;
         } else {
             revert("Unsupported token");
         }
+
     }
 
     /*

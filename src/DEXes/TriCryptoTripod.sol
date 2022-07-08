@@ -475,7 +475,7 @@ contract CurveTripod is NoHedgeTripod {
      * in the joint. There may be some funds not used in the position and left idle in the 
      * joint
      */
-    function harvest() external override onlyKeepers {
+    function tend() external override onlyKeepers {
         getReward();
     }
 
