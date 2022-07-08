@@ -329,31 +329,31 @@ abstract contract Tripod {
         // to leave the position with the initial proportions
         rebalance();
 
-        // reset invested balances
-        invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
-
         // Check that we have returned with no losses
-        require(  //////////May want to add unchecked for all the math /// Need to base of a diffeent number than total Debt()
+        require( 
             balanceOfA() >=
-                (providerA.totalDebt() *
+                (invested[tokenA] *
                     (RATIO_PRECISION - maxPercentageLoss)) /
                     RATIO_PRECISION,
             "!wrong-balanceA"
         );
         require(
             balanceOfB() >=
-                (providerB.totalDebt() *
+                (invested[tokenB] *
                     (RATIO_PRECISION - maxPercentageLoss)) /
                     RATIO_PRECISION,
             "!wrong-balanceB"
         );
         require(
             balanceOfC() >=
-                (providerC.totalDebt() *
+                (invested[tokenC] *
                     (RATIO_PRECISION - maxPercentageLoss)) /
                     RATIO_PRECISION,
             "!wrong-balanceC"
         );
+
+        // reset invested balances
+        invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
     }
     
     /*

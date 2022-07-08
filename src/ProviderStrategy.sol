@@ -104,21 +104,25 @@ contract ProviderStrategy is BaseStrategyInitializable {
 
         if (amountRequired > amountAvailable) {
             uint256 need = amountRequired - amountAvailable;
-            if (need > amountAtTripod) {
+            if(need > amountAtTripod) {
+                need = amountAtTripod;
+            }
+            want.safeTransferFrom(tripod, address(this), need);
+
+            amountAvailable = balanceOfWant();
+            if (_debtOutstanding > amountAvailable) {
                 // available funds are lower than the repayment that we need to do
                 _profit = 0;
-                _debtPayment = totalAssets;
-                need = amountAtTripod;
+                _debtPayment = amountAvailable;
                 // we dont report losses here as the strategy might not be able to return in this harvest
                 // but it will still be there for the next harvest
             } else {
                 // NOTE: amountRequired is always equal or greater than _debtOutstanding
                 // important to use amountAvailable just in case amountRequired is > amountAvailable
                 _debtPayment = _debtOutstanding;
-                _profit = amountAvailable + need - _debtPayment;
+                _profit = amountAvailable - _debtPayment;
             }
-            //Pull whats needed from tripod
-            want.safeTransferFrom(tripod, address(this), need);
+
         } else {
             _debtPayment = _debtOutstanding;
         }
