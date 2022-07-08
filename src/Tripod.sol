@@ -292,16 +292,29 @@ abstract contract Tripod {
         maxPercentageLoss = _maxPercentageLoss;
     }
 
-    /*
-     * @notice
-     *  Function available for providers to close the joint position and can then pull funds back
-     * provider strategy
-     */
-    function closeAllPositions() external onlyProviders {
+        // Keepers will claim and sell rewards mid-epoch (otherwise we sell only in the end)
+    function harvest() external virtual onlyKeepers {
+        // Check if it needs to stop starting new epochs after finishing this one.
+        // _autoProtect is implemented in children
+        if (_autoProtect() && !autoProtectionDisabled) {
+            dontInvestWant = true;
+        }
+    	//Exits all positions into equal amounts
         _closeAllPositions();
+
+        //Harvest all three providers
+        providerA.harvest();
+        providerB.harvest();
+        providerC.harvest();
+
+        //Check if we should reopen position
+        if(dontInvestWant) {
+            _returnLooseToProviders();
+        } else {
+            _openPosition();
+        }
     }
 
-	
     /*
      * @notice internal function to be called during harvest or by a provider
      *  will pull out of all LP positions, sell all rewards and rebalance back to as even as possible
@@ -355,6 +368,16 @@ abstract contract Tripod {
         // reset invested balances
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
     }
+
+        /*
+     * @notice
+     *  Function available for providers to close the joint position and can then pull funds back
+     * provider strategy
+     */
+    function closeAllPositions() external onlyProviders {
+        _closeAllPositions();
+    }
+	
     
     /*
      * @notice
@@ -379,13 +402,14 @@ abstract contract Tripod {
         ); // don't create LP if we are already invested
 
         // Open the LP position
-        (uint256 amountA, uint256 amountB) = createLP();
+        (uint256 amountA, uint256 amountB, uint256 amountC) = createLP();
         // Open hedge
-        (uint256 costHedgeA, uint256 costHedgeB) = hedgeLP();
+        (uint256 costHedgeA, uint256 costHedgeB, uint256 costHedgeC) = hedgeLP();
 
         // Set invested amounts
         invested[tokenA] = amountA + costHedgeA;
         invested[tokenB] = amountB + costHedgeB;
+        invested[tokenC] = amountC + costHedgeC;
 
         // Deposit LPs (if any)
         depositLP();
@@ -396,213 +420,11 @@ abstract contract Tripod {
         }
     }
 
-    // Keepers will claim and sell rewards mid-epoch (otherwise we sell only in the end)
-    function harvest() external virtual onlyKeepers {
-        // Check if it needs to stop starting new epochs after finishing this one.
-        // _autoProtect is implemented in children
-        if (_autoProtect() && !autoProtectionDisabled) {
-            dontInvestWant = true;
-        }
-    	//Exits all positions into equal amounts
-        _closeAllPositions();
-
-        //Harvest all three providers
-        providerA.harvest();
-        providerB.harvest();
-        providerC.harvest();
-
-        //Check if we should reopen position
-        if(dontInvestWant) {
-            _returnLooseToProviders();
-        } else {
-            _openPosition();
-        }
-    }
-
     function harvestTrigger(uint256 /*callCost*/) external view virtual returns (bool) {
         return balanceOfRewardToken()[0] > minRewardToHarvest;
     }
 
     function getHedgeProfit() public view virtual returns (uint256, uint256);
-
-    /*
-     * @notice
-     *  Function estimating the current assets in the joint, taking into account:
-     * - current balance of tokens in the LP
-     * - pending rewards from the LP (if any)
-     * - hedge profit (if any)
-     * - rebalancing of tokens to maintain token ratios
-     * @return _aBalance, _bBalance, estimated tokenA and tokenB balances
-     */
-    function estimatedTotalAssetsAfterBalance()
-        public
-        view
-        returns (uint256 _aBalance, uint256 _bBalance)
-    {
-        // Current status of tokens in LP (includes potential IL)
-        (_aBalance, _bBalance) = balanceOfTokensInLP();
-        // Include hedge payoffs
-        (uint256 callProfit, uint256 putProfit) = getHedgeProfit();
-
-        // Add remaining balance in joint (if any)
-        unchecked{
-            _aBalance += balanceOfA() + callProfit;
-            _bBalance += balanceOfB() + putProfit;
-        }
-
-        // Include rewards (swapping them if not tokenA or tokenB)
-        uint256[] memory _rewardsPending = pendingRewards();
-        address[] memory _rewardTokens = rewardTokens;
-        for (uint256 i = 0; i < _rewardTokens.length; i++) {
-            address reward = _rewardTokens[i];
-            if (reward == tokenA) {
-                _aBalance = _aBalance + _rewardsPending[i];
-            } else if (reward == tokenB) {
-                _bBalance = _bBalance + _rewardsPending[i];
-            } else if (_rewardsPending[i] != 0) {     /////Will need to add an extra if statement here
-                address swapTo = findSwapTo(reward);
-                uint256 outAmount = quote(
-                    reward,
-                    swapTo,
-                    _rewardsPending[i] + IERC20(reward).balanceOf(address(this))
-                );
-                if (swapTo == tokenA) {   /////Addd a third option here
-                    _aBalance += outAmount;
-                } else if (swapTo == tokenB) {
-                    _bBalance += outAmount;
-                }
-            }
-        }
-
-        // Calculate rebalancing operation needed
-        (address sellToken, uint256 sellAmount) = calculateSellToBalance(
-            _aBalance,
-            _bBalance,
-            invested[tokenA],
-            invested[tokenB]
-        );
-
-        // Update amounts with rebalancing operation
-        if (sellToken == tokenA) {
-            uint256 buyAmount = quote(sellToken, tokenB, sellAmount);
-            _aBalance -= sellAmount;
-            _bBalance += buyAmount;
-        } else if (sellToken == tokenB) {
-            uint256 buyAmount = quote(sellToken, tokenA, sellAmount);
-            _bBalance -= sellAmount;
-            _aBalance += buyAmount;
-        }
-    }
-
-    /*
-     * @notice
-     *  Function available internally calculating the necessary operation to rebalance
-     * the tokenA and tokenB balances to initial ratios
-     * @param currentA, current balance of tokenA
-     * @param currentB, current balance of tokenB
-     * @param startingA, initial balance of tokenA
-     * @param startingB, initial balance of tokenB
-     * @return _sellToken, address of the token needed to sell
-     * @return _sellAmount, amount needed to sell
-     */
-    function calculateSellToBalance(
-        uint256 currentA,
-        uint256 currentB,
-        uint256 startingA,
-        uint256 startingB
-    ) internal view returns (address _sellToken, uint256 _sellAmount) {
-        // If no position, no calculation needed
-        if (startingA == 0 || startingB == 0) return (address(0), 0);
-
-        // Get the current ratio between current and starting balance for each token
-        (uint256 ratioA, uint256 ratioB,) = getRatios(
-            currentA,
-            currentB,
-            startingA,
-            startingB,
-            0,
-            0
-        );
-
-        //  if already balanced, no action needed
-        if (ratioA == ratioB) return (address(0), 0);
-
-        // If ratioA is higher, there is excess of tokenA
-        if (ratioA > ratioB) {
-            _sellToken = tokenA;
-            // Simulate the swap and assess the received amount
-            _sellAmount = _calculateSellToBalance(
-                _sellToken,
-                currentA,
-                currentB,
-                startingA,
-                startingB,
-                10**uint256(IERC20Extended(tokenA).decimals())
-            );
-        } else {
-            // ratioB is higher, excess of tokenB
-            _sellToken = tokenB;
-            // Simulate the swap and assess the received amount
-            _sellAmount = _calculateSellToBalance(
-                _sellToken,
-                currentB,
-                currentA,
-                startingB,
-                startingA,
-                10**uint256(IERC20Extended(tokenB).decimals())
-            );
-        }
-    }
-
-    /*
-     * @notice
-     *  Function available internally calculating and simulating the necessary swap to 
-     * rebalance the tokens
-     * @param sellToken, address of the token to sell
-     * @param current0, current balance of token
-     * @param current1, current balance of other token
-     * @param starting0, initial balance of token
-     * @param starting1, initial balance of other token     
-     * @param precision, constant value ensuring precision is preserved
-     * @return _sellAmount, amount needed to sell
-     */
-    function _calculateSellToBalance(
-        address sellToken,
-        uint256 current0,
-        uint256 current1,
-        uint256 starting0,
-        uint256 starting1,
-        uint256 precision
-    ) internal view returns (uint256 _sellAmount) {
-        uint256 numerator = (current0 - ((starting0 * current1) / starting1)) *
-            precision;
-        uint256 exchangeRate = quote(
-            sellToken,
-            sellToken == tokenA ? tokenB : tokenA,
-            precision
-        );
-
-        // First time to approximate
-        _sellAmount =
-            numerator /
-            (precision + ((starting0 * exchangeRate) / starting1));
-        // Shortcut to avoid Uniswap amountIn == 0 revert
-        if (_sellAmount == 0) {
-            return 0;
-        }
-
-        // Second time to account for price impact
-        exchangeRate =
-            (quote(
-                sellToken,
-                sellToken == tokenA ? tokenB : tokenA,
-                _sellAmount
-            ) * precision) /
-            _sellAmount;
-        _sellAmount =
-            numerator /
-            (precision + ((starting0 * exchangeRate) / starting1));
-    }
 
     /*
     * @notice
@@ -613,10 +435,7 @@ abstract contract Tripod {
         (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
                     balanceOfA(),
                     balanceOfB(),
-                    balanceOfC(),
-                    invested[tokenA],
-                    invested[tokenB],
-                    invested[tokenC]
+                    balanceOfC()
                 );
         
         //If they are all the same we dont need to do anything
@@ -721,7 +540,7 @@ abstract contract Tripod {
     /*
      * @notice
      *  Function to be called during rebalancing.
-     *  This will swap the extra tokens from the two that returned the higher than target return to the other one
+     *  This will swap the extra tokens from the two that returned raios higher than target return to the other one
      *  in relation to what they gained attempting to make everything as equal as possible
      *  All minAmountToSell checks will be handled in the swap function
      * @param avgRatio, The average Ratio from their start we want to end all tokens as close to as possible
@@ -763,6 +582,238 @@ abstract contract Tripod {
         );
     }
 
+    
+    /*
+     * @notice
+     *  Function estimating the current assets in the joint, taking into account:
+     * - current balance of tokens in the LP
+     * - pending rewards from the LP (if any)
+     * - hedge profit (if any)
+     * - rebalancing of tokens to maintain token ratios
+     * @return estimated tokenA tokenB and tokenC balances
+     */
+    function estimatedTotalAssetsAfterBalance()
+        public
+        view
+        returns (uint256, uint256, uint256)
+    {
+        // Current status of tokens in LP (includes potential IL)
+        (uint256 _aBalance, uint256 _bBalance, uint256 _cBalance) = balanceOfTokensInLP();
+        // Include hedge payoffs
+        (uint256 callProfit, uint256 putProfit) = getHedgeProfit();
+
+        // Add remaining balance in joint (if any)
+        unchecked{
+            _aBalance += balanceOfA() + callProfit;
+            _bBalance += balanceOfB() + putProfit;
+            _cBalance += balanceOfC();
+        }
+
+        // Include rewards (swapping them if not tokenA or tokenB)
+        uint256[] memory _rewardsPending = pendingRewards();
+        address[] memory _rewardTokens = rewardTokens;
+        address reward;
+        for (uint256 i = 0; i < _rewardTokens.length; i++) {
+            reward = _rewardTokens[i];
+            if (reward == tokenA) {
+                _aBalance += _rewardsPending[i];
+            } else if (reward == tokenB) {
+                _bBalance += _rewardsPending[i];
+            } else if (reward == tokenC) {
+                _cBalance += _rewardsPending[i];
+            } else if (_rewardsPending[i] != 0) {
+                //If we are using the reference token swap to that otherwise use A
+                address swapTo = usingReference ? referenceToken : tokenA;
+                uint256 outAmount = quote(
+                    reward,
+                    swapTo,
+                    _rewardsPending[i] + IERC20(reward).balanceOf(address(this))
+                );
+                if (swapTo == tokenA) { 
+                    _aBalance += outAmount;
+                } else if (swapTo == tokenB) {
+                    _bBalance += outAmount;
+                } else if (swapTo == tokenC) {
+                    _cBalance += outAmount;
+                }
+            }
+        }
+
+        return quoteRebalance(_aBalance, _bBalance, _cBalance);
+    }
+
+    function quoteRebalance(
+        uint256 startingA,
+        uint256 startingB,
+        uint256 startingC
+    ) internal view returns(uint256, uint256, uint256) {
+
+        (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
+                    startingA,
+                    startingB,
+                    startingC
+                );
+        
+        //If they are all the same we dont need to do anything
+        if(ratioA == ratioB && ratioB == ratioC) {
+            return(startingA, startingB, startingC);
+        }
+        // Calculate the average ratio. Could be at a loss does not matter here
+        uint256 avgRatio;
+        unchecked{
+            avgRatio = (ratioA + ratioB + ratioC) / 3;
+        }
+
+        uint256 change0;
+        uint256 change1;
+        uint256 change2;
+        //See Rebalance() for explanation
+        if(ratioA > avgRatio) {
+            if (ratioB > avgRatio) {
+                //Swapping A and B -> C
+                (change0, change1, change2) = quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
+                return ((startingA - change0), 
+                            (startingB - change1), 
+                                (startingC + change2));
+            } else if (ratioC > avgRatio) {
+                //swapping A and C -> B
+                (change0, change1, change2) = quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
+                return ((startingA - change0), 
+                            (startingB + change1), 
+                                (startingC - change2));
+            } else {
+                //Swapping A -> B and C
+                (change0, change1, change2) = quoteSwapOneToTwo(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC, ratioC);
+                return ((startingA - change0), 
+                            (startingB + change1), 
+                                (startingC + change2));
+            }
+        } else if (ratioB > avgRatio) {
+            //We know A is below avg so we just need to check C
+            if (ratioC > avgRatio) {
+                //Swap B and C -> A
+                (change0, change1, change2) = quoteSwapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
+                return ((startingA + change2), 
+                            (startingB - change0), 
+                                (startingC - change1));
+            } else {
+                //swapping B -> C and A
+                (change0, change1, change2) = quoteSwapOneToTwo(avgRatio, tokenB, ratioB, tokenA, ratioA, tokenC, ratioC);
+                return ((startingA + change1), 
+                            (startingB - change0), 
+                                (startingC + change2));
+            }
+        } else {
+            //We know A and B are below so C has to be the only one above the avg
+            //swap C -> A and B
+            (change0, change1, change2) = quoteSwapOneToTwo(avgRatio, tokenC, ratioC, tokenA, ratioA, tokenB, ratioB);
+            return ((startingA + change1), 
+                        (startingB + change2), 
+                            (startingC - change0));
+        }   
+    }
+
+    /*
+     * @notice
+     *  Function to be called during mock rebalancing.
+     *  This will quote swapping the extra tokens from the one that has returned the highest amount to the other two
+     *  in relation to what they need attempting to make everything as equal as possible
+     *  will return the absolute changes expected for each token, accounting will take place in parent function
+     * @param avgRatio, The average Ratio from their start we want to end all tokens as close to as possible
+     * @param toSwapToken, the token we will be swapping from to the other two
+     * @param toSwapRatio, The current ratio for the token we are swapping from
+     * @param token0Address, address of one of the tokens we are swapping to
+     * @param token0Ratio, the current ratio for the first token we are swapping to
+     * @param token1Address, address of the second token we are swapping to
+     * @param token1Ratio, the current ratio of the second token we are swapping to
+     * @return negative change in toSwapToken, positive change for token0, positive change for token1
+    */
+    function quoteSwapOneToTwo(
+        uint256 avgRatio,
+        address toSwapToken,
+        uint256 toSwapRatio,
+        address token0Address,
+        uint256 token0Ratio,
+        address token1Address,
+        uint256 token1Ratio
+    ) internal view returns(uint256, uint256, uint256) {
+        uint256 amountToSell;
+        uint256 totalDiff;
+        uint256 swapTo0;
+        uint256 swapTo1;
+
+        unchecked {
+            //Calculates the difference between current amount and desired amount in token terms
+            amountToSell = (toSwapRatio - avgRatio) * invested[toSwapToken] / RATIO_PRECISION;
+            //Used for % calcs
+            totalDiff = (avgRatio - token0Ratio) + (avgRatio - token1Ratio);
+            //How much of the amount to be swapped is owed to token0
+            swapTo0 = amountToSell * (avgRatio - token0Ratio) / totalDiff;
+            //To assure we dont sell to much 
+            swapTo1 = amountToSell - swapTo0;
+        }
+
+        uint256 amountOut = quote(
+            toSwapToken, 
+            token0Address, 
+            swapTo0
+        );
+
+        uint256 amountOut2 = quote(
+            toSwapToken, 
+            token1Address, 
+            swapTo1
+        );
+
+        return (amountToSell, amountOut, amountOut2);
+    }   
+
+    /*
+     * @notice
+     *  Function to be called during rebalancing.
+     *  This will swap the extra tokens from the two that returned raios higher than target return to the other one
+     *  in relation to what they gained attempting to make everything as equal as possible
+     *  will return the absolute changes expected for each token, accounting will take place in parent function
+     * @param avgRatio, The average Ratio from their start we want to end all tokens as close to as possible
+     * @param token0Address, address of one of the tokens we are swapping from
+     * @param token0Ratio, the current ratio for the first token we are swapping from
+     * @param token1Address, address of the second token we are swapping from
+     * @param token1Ratio, the current ratio of the second token we are swapping from
+     * @param toTokenAddress, address of the token we are swapping to
+     * @return negative change for token0, negative change for token1, positive change for toTokenAddress
+    */
+    function quoteSwapTwoToOne(
+        uint256 avgRatio,
+        address token0Address,
+        uint256 token0Ratio,
+        address token1Address,
+        uint256 token1Ratio,
+        address toTokenAddress
+    ) internal view returns(uint256, uint256, uint256) {
+        uint256 toSwapFrom0;
+        uint256 toSwapFrom1;
+
+        unchecked {
+            //Calculates the difference between current amount and desired amount in token terms
+            toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
+            toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
+        }
+
+        uint256 amountOut = quote(
+            token0Address, 
+            toTokenAddress, 
+            toSwapFrom0
+        );
+
+        uint256 amountOut2 = quote(
+            token1Address, 
+            toTokenAddress, 
+            toSwapFrom1
+        );
+
+        return (toSwapFrom0, toSwapFrom1, (amountOut + amountOut2));
+    }
+
     /*
      * @notice
      *  Function available publicly estimating the balance of one of the providers 
@@ -777,9 +828,11 @@ abstract contract Tripod {
         returns (uint256 _balance)
     {
         if (_provider == address(providerA)) {
-            (_balance, ) = estimatedTotalAssetsAfterBalance();
+            (_balance, , ) = estimatedTotalAssetsAfterBalance();
         } else if (_provider == address(providerB)) {
-            (, _balance) = estimatedTotalAssetsAfterBalance();
+            (, _balance, ) = estimatedTotalAssetsAfterBalance();
+        } else if (_provider == address(providerC)) {
+            (, , _balance) = estimatedTotalAssetsAfterBalance();
         }
     }
 
@@ -789,7 +842,7 @@ abstract contract Tripod {
         virtual
         returns (uint256);
 
-    function hedgeLP() internal virtual returns (uint256, uint256);
+    function hedgeLP() internal virtual returns (uint256, uint256, uint256);
 
     function closeHedge() internal virtual;
 
@@ -800,78 +853,23 @@ abstract contract Tripod {
      * @param currentA, current balance of tokenA
      * @param currentB, current balance of tokenB
      * @param currentC, current balance of tokenC
-     * @param startingA, initial balance of tokenA
-     * @param startingB, initial balance of tokenB
-     * @param startingC, initial balance of tokenC
      * @return _a, _b _c, ratios for tokenA tokenB and tokenC
      */
     function getRatios(
         uint256 currentA,
         uint256 currentB,
-        uint256 currentC,
-        uint256 startingA,
-        uint256 startingB,
-        uint256 startingC
-    ) public pure returns (uint256 _a, uint256 _b, uint256 _c) {
+        uint256 currentC
+    ) public view returns (uint256 _a, uint256 _b, uint256 _c) {
         unchecked {
-            _a = (currentA * RATIO_PRECISION) / startingA;
-            _b = (currentB * RATIO_PRECISION) / startingB;
-            _c = (currentC * RATIO_PRECISION) / startingC;
+            _a = (currentA * RATIO_PRECISION) / invested[tokenA];
+            _b = (currentB * RATIO_PRECISION) / invested[tokenB];
+            _c = (currentC * RATIO_PRECISION) / invested[tokenC];
         }
     }
 
-    function createLP() internal virtual returns (uint256, uint256);
+    function createLP() internal virtual returns (uint256, uint256, uint256);
 
     function burnLP(uint256 amount) internal virtual;
-
-    /*
-     * @notice
-     *  Function available internally deciding what to swap agaisnt the requested token:
-     * - if token is either tokenA or B, swap to the other
-     * - if token is not A or B but is a reward, swap to the reference token if it's 
-     * either A or B, if not, swap to tokenA
-     * @param token, address of the token to swap from
-     * @return address of the token to swap to
-     */
-    function findSwapTo(address fromToken) internal view returns (address) {
-        if (tokenA == fromToken) {
-            return tokenB;
-        } else if (tokenB == fromToken) {
-            return tokenA;
-        }
-        if (tokenA == referenceToken || tokenB == referenceToken) {   ///Will need to add new if statement and option here. Also change this statement to be first logic check
-            return referenceToken;
-        }
-        return tokenA;
-    }
-
-    /*
-     * @notice
-     *  Function available internally deciding the swapping path to follow
-     * @param _tokenIn, address of the token to swap from
-     * @param _token_to, address of the token to swap to
-     * @return address array of the swap path to follow
-     */
-    function getTokenOutPath(address _tokenIn, address _tokenOut)  //This should get moved to the dex specific integration. Isnt applicable curve/Univ3 or Balancer
-        internal
-        view
-        returns (address[] memory _path)
-    {   
-        address _tokenA = tokenA;
-        address _tokenB = tokenB;
-        bool isReferenceToken = _tokenIn == address(referenceToken) ||
-            _tokenOut == address(referenceToken);
-        bool isInternal = (_tokenIn == _tokenA && _tokenOut == _tokenB) ||
-            (_tokenIn == _tokenB && _tokenOut == _tokenA);
-        _path = new address[](isReferenceToken || isInternal ? 2 : 3);
-        _path[0] = _tokenIn;
-        if (isReferenceToken || isInternal) {
-            _path[1] = _tokenOut;
-        } else {
-            _path[1] = address(referenceToken);
-            _path[2] = _tokenOut;
-        }
-    }
 
     function getReward() internal virtual;
 
@@ -906,10 +904,7 @@ abstract contract Tripod {
                 (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(   //Can create a new function that is swapRewardToken() that can either implement this logic or pick a token to swap to based on liquidity
                     balanceOfA(),
                     balanceOfB(),
-                    balanceOfC(),
-                    invested[tokenA],
-                    invested[tokenB],
-                    invested[tokenC]
+                    balanceOfC()
                 );
        
                 //If everything is equal use A   
@@ -1037,7 +1032,7 @@ abstract contract Tripod {
         public
         view
         virtual
-        returns (uint256 _balanceA, uint256 _balanceB);
+        returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC);
 
     function pendingRewards() public view virtual returns (uint256[] memory);
 
@@ -1055,9 +1050,9 @@ abstract contract Tripod {
         uint256 expectedBalanceC
     ) external onlyVaultManagers {
         (uint256 balanceA, uint256 balanceB, uint256 balanceC) = _closePosition();
-        require(expectedBalanceA <= balanceA, "!sandwidched");
-        require(expectedBalanceB <= balanceB, "!sandwidched");
-        require(expectedBalanceC <= balanceC, "!sandwidched");
+        require(expectedBalanceA <= balanceA, "!sandwiched");
+        require(expectedBalanceB <= balanceB, "!sandwiched");
+        require(expectedBalanceC <= balanceC, "!sandwiched");
     }
 
     /*
@@ -1073,31 +1068,36 @@ abstract contract Tripod {
      *  Function available to vault managers closing the LP position manually
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
+     * @param expectedBalanceC, expected balance of tokenC to receive
      */
     function removeLiquidityManually(
         uint256 amount,
         uint256 expectedBalanceA,
-        uint256 expectedBalanceB
+        uint256 expectedBalanceB,
+        uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
         burnLP(amount);
-        require(expectedBalanceA <= balanceOfA(), "!sandwidched");
-        require(expectedBalanceB <= balanceOfB(), "!sandwidched");
+        require(expectedBalanceA <= balanceOfA(), "!sandwiched");
+        require(expectedBalanceB <= balanceOfB(), "!sandwiched");
+        require(expectedBalanceC <= balanceOfC(), "!sandwiched");
     }
 
     function swapTokenForTokenManually(
-        bool sellA,
+        address tokenFrom,
+        address tokenTo,
         uint256 swapInAmount,
         uint256 minOutAmount
     ) external virtual returns (uint256);
 
     /*
      * @notice
-     *  Function available to governance sweeping a specified token but tokenA and B
+     *  Function available to governance sweeping a specified token but not tokenA B or C
      * @param _token, address of the token to sweep
      */
     function sweep(address _token) external onlyGovernance {
         require(_token != tokenA, "TokenA");
         require(_token != tokenB, "TokenB");
+        require(_token != tokenC, "TokenC");
 
         SafeERC20.safeTransfer(
             IERC20(_token),
@@ -1113,10 +1113,13 @@ abstract contract Tripod {
      */
     function migrateProvider(address _newProvider) external onlyProviders {
         ProviderStrategy newProvider = ProviderStrategy(_newProvider);
-        if (address(newProvider.want()) == tokenA) {
+        address providerWant = address(newProvider.want());
+        if (providerWant == tokenA) {
             providerA = newProvider;
-        } else if (address(newProvider.want()) == tokenB) {
+        } else if (providerWant == tokenB) {
             providerB = newProvider;
+        } else if(providerWant == tokenC) {
+            providerC = newProvider;
         } else {
             revert("Unsupported token");
         }

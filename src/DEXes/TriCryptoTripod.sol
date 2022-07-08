@@ -187,7 +187,7 @@ contract CurveTripod is NoHedgeTripod {
         public
         view
         override
-        returns (uint256 _balanceA, uint256 _balanceB)
+        returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC)
     {
        
     }
@@ -223,7 +223,7 @@ contract CurveTripod is NoHedgeTripod {
      *      - calls the mint function in the uni v3 pool
      * @return balance of tokens in the LP (invested amounts)
      */
-    function createLP() internal override returns (uint256, uint256) {
+    function createLP() internal override returns (uint256, uint256, uint256) {
         
     }
 
@@ -395,12 +395,13 @@ contract CurveTripod is NoHedgeTripod {
      * @return swapped amount
      */
     function swapTokenForTokenManually(
-        bool sellA,
+        address tokenFrom,
+        address tokenTo,
         uint256 swapInAmount,
         uint256 minOutAmount
     ) external onlyGovernance override returns (uint256) {
 
-        if(sellA) {
+        if(true) {
             return swap(
                 tokenA,
                 tokenB,
@@ -477,4 +478,33 @@ contract CurveTripod is NoHedgeTripod {
     function harvest() external override onlyKeepers {
         getReward();
     }
+
+        /*
+     * @notice
+     *  Function available internally deciding the swapping path to follow
+     * @param _token_in, address of the token to swap from
+     * @param _token_to, address of the token to swap to
+     * @return address array of the swap path to follow
+     */
+    function getTokenOutPath(address _token_in, address _token_out)
+        internal
+        view
+        returns (address[] memory _path)
+    {   
+        address _tokenA = tokenA;
+        address _tokenB = tokenB;
+        bool isReferenceToken = _token_in == address(referenceToken) ||
+            _token_out == address(referenceToken);
+        bool is_internal = (_token_in == _tokenA && _token_out == _tokenB) ||
+            (_token_in == _tokenB && _token_out == _tokenA);
+        _path = new address[](isReferenceToken || is_internal ? 2 : 3);
+        _path[0] = _token_in;
+        if (isReferenceToken || is_internal) {
+            _path[1] = _token_out;
+        } else {
+            _path[1] = address(referenceToken);
+            _path[2] = _token_out;
+        }
+    }
+
 }

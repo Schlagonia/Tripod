@@ -34,10 +34,10 @@ abstract contract NoHedgeTripod is Tripod {
         internal
         pure
         override
-        returns (uint256 costA, uint256 costB)
+        returns (uint256 costA, uint256 costB, uint256 costC)
     {
         // NO HEDGE
-        return (0, 0);
+        return (0, 0, 0);
     }
 
     function closeHedge() internal pure override {
