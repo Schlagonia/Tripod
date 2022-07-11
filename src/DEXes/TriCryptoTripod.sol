@@ -8,6 +8,8 @@ import "../Hedges/NoHedgeJoint.sol";
 
 import {ICurveFi} from "../interfaces/Curve/ICurveFi.sol";
 import {IUniswapV2Router02} from "../interfaces/uniswap/V2/IUniswapV2Router02.sol";
+import {IConvexDeposit} from "../interfaces/Convex/IConvexDeposit.sol";
+import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
@@ -23,14 +25,28 @@ contract CurveTripod is NoHedgeTripod {
     
     // Used for cloning, will automatically be set to false for other clones
     bool public isOriginal = true;
-    // boolean variable deciding wether to swap in the uni v3 pool or using CRV
+    // boolean variable deciding wether to swap in uni or use CRV for provider tokens
     // this can make sense if the pool is unbalanced and price is far from CRV or if the 
     // liquidity remaining in the pool is not enough for the rebalancing swap the strategy needs
-    // to perform as the swap function from the uniV3 pool uses a while loop that would get stuck 
-    // until we reach gas limit
     bool public useUniRouter;
-    // CRV pool to use in case of useCRVPool = true
+    //Router to use in case of useUnirouter = true
     address public router;
+
+    //The token the Curve pool mints for LP deposits
+    address public poolToken;
+    mapping (address => uint256) private index;
+
+    //Convex contracts for staking and rewwards
+    IConvexDeposit public constant depositContract = 
+        IConvexDeposit(0xF403C135812408BFbE8713b5A23a04b3D48AAE31);
+    IConvexRewards public constant rewardsContract =
+        IConvexRewards(0x9D5C5E364D81DaB193b72db9E9BE9D8ee669B652);
+    address private constant convexToken = 
+        address(0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B);
+    address private constant crvToken =
+        address(0xD533a949740bb3306d119CC777fa900bA034cd52);
+    uint256 public pid; // this is unique to each pool
+    bool public harvestExtras = true; //If we chould claim extras on harvests
 
     /*
      * @notice
@@ -76,16 +92,28 @@ contract CurveTripod is NoHedgeTripod {
      *  Initialize CurveTtripod specifics
      */
     function _initializeCurveTripod() internal {
+        //Get the token we will be using
+        poolToken = ICurveFi(pool).token();
+        pid = rewardsContract.pid();
         // The reward tokens are the tokens provided to the pool
-        rewardTokens = new address[](2);
+        //This will update them based on current rewards on convex
+        updateRewardTokens();
 
-        //Use _getCrvPoolIndex to set mappings of indexs
- 
-        // by default use uni pool to swap as it has lower fees
+        //Use _getCrvPoolIndex to set mappings of index's
+        index[tokenA] = _getCRVPoolIndex(tokenA);
+        index[tokenB] = _getCRVPoolIndex(tokenB);
+        index[tokenC] = _getCRVPoolIndex(tokenC);
+
+        // by default use crv pool to swap
         useUniRouter = false;
-        // Initialize CRV pool to 3pool
-        router = address(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7); //Need to change
+        // Use sushi router due to higher liquidity for CVX
+        router = address(0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F);
 
+        maxApprove(tokenA, pool);
+        maxApprove(tokenB, pool);
+        maxApprove(tokenC, pool);
+        maxApprove(poolToken, pool);
+        maxApprove(poolToken, address(depositContract));
     }
 
     event Cloned(address indexed clone);
@@ -147,15 +175,6 @@ contract CurveTripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Function returning the liquidity amount of the LP position
-     * @return liquidity from positionInfo
-     */
-    function balanceOfPool() public view override returns (uint256 liquidity) {
-        
-    }
-
-    /*
-     * @notice
      *  Function available for vault managers to set the boolean value deciding wether
      * to use the uni router for swaps or a CRV pool
      * @param _useUniRouter, new boolean value to use
@@ -164,16 +183,40 @@ contract CurveTripod is NoHedgeTripod {
         useUniRouter = _useUniRouter;
     }
 
+    function updateRewardTokens() internal returns(address[] memory tokens) {
+        delete rewardTokens; //empty the rewardsTokens and rebuild
+
+        //We know we will be getting convex and curve at least
+        rewardTokens.push(crvToken);
+        rewardTokens.push(convexToken);
+
+        for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
+            address virtualRewardsPool = rewardsContract.extraRewards(i);
+            address _rewardsToken =
+                IConvexRewards(virtualRewardsPool).rewardToken();
+
+            rewardTokens.push(_rewardsToken);
+        }
+    }
+
     /*
      * @notice
-     *  Function available for vault managers to set the Uni v3 pool to invest into
-     * @param pool, new pool value to use
+     *  Function returning the liquidity amount of the LP position
+     *  This is just the non-staked balance
+     * @return balance of LP token
      */
-    function setPool(address _pool) external onlyVaultManagers {
-        require(invested[tokenA] == 0 && invested[tokenB] == 0 && invested[tokenC] == 0, "Invested still");
-        //Sanity check, at least one should not be 0
-        require(_getCRVPoolIndex(tokenA, ICurveFi(_pool)) != 0 || _getCRVPoolIndex(tokenB, ICurveFi(_pool)) != 0, "wrong pool");
-        pool = _pool;
+    function balanceOfPool() public view override returns (uint256) {
+        return IERC20(poolToken).balanceOf(address(this));
+    }
+
+    function balanceOfStake() public view override returns (uint256) {
+        return rewardsContract.balanceOf(address(this));
+    }
+
+    function totalLpBalance() public view returns (uint256) {
+        unchecked {
+            return balanceOfPool() + balanceOfStake();
+        }
     }
 
     /*
@@ -182,14 +225,23 @@ contract CurveTripod is NoHedgeTripod {
      * the new level of reserves into account
      * @return _balanceA, balance of tokenA in the LP position
      * @return _balanceB, balance of tokenB in the LP position
+     * @return _balanceC, balance of tokenC in LP position
      */
     function balanceOfTokensInLP()
         public
         view
         override
-        returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC)
+        returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
-       
+        ICurveFi _pool = ICurveFi(pool);
+        //User the VP to get dollar value then oracles to adjust;
+        //Could use actual pool values, but that could be manipulated
+
+        // use calc_Withdrawone_coin for a third of each
+        uint256 third = totalLpBalance() * 3_333 / 10_000;
+        _balanceA = _pool.calc_withdraw_one_coin(third, index[tokenA]);
+        _balanceB = _pool.calc_withdraw_one_coin(third, index[tokenB]);
+        _balanceC = _pool.calc_withdraw_one_coin(third, index[tokenC]);
     }
 
     /*
@@ -200,76 +252,126 @@ contract CurveTripod is NoHedgeTripod {
     function pendingRewards() public view override returns (uint256[] memory) {
         // Initialize the array to same length as reward tokens
         uint256[] memory _amountPending = new uint256[](rewardTokens.length);
+        //Save the earned CrV rewards to 0 where crv will be
+        _amountPending[0] = rewardsContract.earned(address(this));
+        //Just place 0 for convex, avoids complex math and underestimates rewards for safety
+        _amountPending[1] = 0;
 
-        
+        //We skipped the first two of the rewards list
+        for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
+            address virtualRewardsPool = rewardsContract.extraRewards(i);
+            //Spot 2 in our array will correspond with 0 in Convex's
+            _amountPending[i + 2] = IConvexRewards(virtualRewardsPool).earned(address(this));
+        }
     }
 
     /*
      * @notice
-     *  Function used internally to collect the accrued fees by burn 0 of the LP position
-     * and collecting the owed tokens (only fees as no LP has been burnt)
-     * @return balance of tokens in the LP (invested amounts)
+     *  Function used internally to collect the accrued rewards mid epoch
      */
     function getReward() internal override {
-        _burnAndCollect(0);
+        rewardsContract.getReward(address(this), harvestExtras);
     }
 
     /*
      * @notice
-     *  Function used internally to open the LP position in the uni v3 pool: 
-     *      - calculates the ticks to provide liquidity into
-     *      - calculates the liquidity amount to provide based on the ticks 
-     *      and amounts to invest
-     *      - calls the mint function in the uni v3 pool
-     * @return balance of tokens in the LP (invested amounts)
+     *  Function used internally to open the LP position: 
+     *     
+     * @return the amounts actually invested for each token
      */
     function createLP() internal override returns (uint256, uint256, uint256) {
-        
+        uint256 _aBalance = balanceOfA();
+        uint256 _bBalance = balanceOfB();
+        uint256 _cBalance = balanceOfC();
+
+        uint256[3] memory amounts;
+        amounts[index[tokenA]] = _aBalance;
+        amounts[index[tokenB]] = _bBalance;
+        amounts[index[tokenC]] = _cBalance;
+
+        ICurveFi(pool).add_liquidity(
+            amounts, 
+            0
+        );
+
+        unchecked {
+            return (
+                (_aBalance - balanceOfA()), 
+                (_bBalance - balanceOfB()), 
+                (_cBalance - balanceOfC())
+            );
+        }
     }
 
     /*
      * @notice
-     *  Function used internally to close the LP position in the uni v3 pool: 
+     *  Function used internally to close the LP position: 
      *      - burns the LP liquidity specified amount
      *      - collects all pending rewards
-     *      - re-sets the active position min and max tick to 0
+     *  
      * @param amount, amount of liquidity to burn
      */
     function burnLP(uint256 _amount) internal override {
-        _burnAndCollect(_amount);
+
+        uint256[3] memory amounts;
+
+        ICurveFi(pool).remove_liquidity(
+            _amount, 
+            amounts
+        );
+    }
+
+    /*
+    * @notice
+    *   Internal function to deposit lp tokens into Convex and stake
+    */
+    function depositLP() internal override {
+        uint256 toStake = IERC20(poolToken).balanceOf(address(this));
+
+        if(toStake == 0) return;
+
+        depositContract.deposit(pid, toStake, true);
+    }
+
+    /*
+    * @notice
+    *   Internal function to unstake tokens from Convex
+    *   harvesExtras will determine if we claim rewards, normally should be true
+    */
+    function withdrawLP() internal override {
         
+        rewardsContract.withdrawAndUnwrap(
+            rewardsContract.balanceOf(address(this)), 
+            harvestExtras
+        );
     }
 
     /*
      * @notice
-     *  Function available to vault managers to burn the LP manually, if for any reason
-     * the ticks have been set to 0 (or any different value from the original LP), we make 
-     * sure we can always get out of the position
-     * This function can be used to only collect fees by passing a 0 amount to burn
+     *  Function available to vault managers to burn the LP manually,
+     *  Will first unstake the amount specified, may need to adjust harvestExtras first
      * @param _amount, amount of liquidity to burn
-     * @param _minTick, lower limit of position
-     * @param _maxTick, upper limit of position
+     * @param _minOutTokenA, Min of A we should have after
+     * @param _minOuttokenB, min of B we should have after
+     * @param _minOutTokenC, min of C we should have after
      */
     function burnLPManually(
             uint256 _amount,
             uint256 _minOutTokenA,
-            uint256 _minOutTokenB
-            ) external onlyVaultManagers {
-        _burnAndCollect(_amount);
-        require(IERC20(tokenA).balanceOf(address(this)) >= _minOutTokenA && 
-                IERC20(tokenB).balanceOf(address(this)) >= _minOutTokenB);
+            uint256 _minOutTokenB,
+            uint256 _minOutTokenC
+    ) external onlyVaultManagers {
+        rewardsContract.withdrawAndUnwrap(_amount, harvestExtras);
+        burnLP(_amount);
+        require(balanceOfA() >= _minOutTokenA && 
+                balanceOfB() >= _minOutTokenB &&
+                balanceOfC() >= _minOutTokenC,
+                "Not enough out");
     }
 
-    /*
-     * @notice
-     *  Function available internally to burn the LP amount specified, for position
-     * defined by minTick and maxTick specified and collect the owed tokens
-     * @param _amount, amount of liquidity to burn
-     */
-    function _burnAndCollect(
-        uint256 _amount
-    ) internal {
-        
+    //To swap out of the reward tokens
+    function swapRewardTokens() internal override {
+
     }
 
     /*
@@ -314,8 +416,8 @@ contract CurveTripod is NoHedgeTripod {
             _checkAllowance(pool, IERC20(_tokenFrom), _amountIn);
             // Perform swap
             _pool.exchange(
-                _getCRVPoolIndex(_tokenFrom, _pool), 
-                _getCRVPoolIndex(_tokenTo, _pool),
+                _getCRVPoolIndex(_tokenFrom), 
+                _getCRVPoolIndex(_tokenTo),
                 _amountIn, 
                 _minOutAmount
             );
@@ -356,8 +458,8 @@ contract CurveTripod is NoHedgeTripod {
 
             // Call the quote function in CRV pool
             return _pool.get_dy(
-                _getCRVPoolIndex(_tokenFrom, _pool), 
-                _getCRVPoolIndex(_tokenTo, _pool), 
+                _getCRVPoolIndex(_tokenFrom), 
+                _getCRVPoolIndex(_tokenTo), 
                 _amountIn
             );
         }
@@ -372,15 +474,14 @@ contract CurveTripod is NoHedgeTripod {
      * - 2 is USDT
      * @return in128 containing the token's pool index
      */
-    function _getCRVPoolIndex(address _token, ICurveFi _pool) internal view returns(int128) {
-        uint8 i = 0; 
-        int128 poolIndex = 0;
+    function _getCRVPoolIndex(address _token) internal view returns(uint256) {
+        uint256 i = 0;
+        ICurveFi _pool = ICurveFi(pool);
         while (i < 3) {
             if (_pool.coins(i) == _token) {
-                return poolIndex;
+                return i;
             }
             i++;
-            poolIndex++;
         }
     }
 
@@ -507,4 +608,7 @@ contract CurveTripod is NoHedgeTripod {
         }
     }
 
+    function maxApprove(address _token, address _contract) internal{
+        IERC20(_token).safeApprove(_contract, type(uint256).max);
+    }
 }

@@ -347,7 +347,7 @@ abstract contract Tripod {
     */
     function _closeAllPositions() internal {
         // Check that we have a position to close
-        if (invested[tokenA] == 0 || invested[tokenB] == 0 || invested[tokenC] == 0) {
+        if (balanceOfPool() == 0 && balanceOfStake() == 0) {
             return;
         }
 
@@ -401,7 +401,6 @@ abstract contract Tripod {
         _closeAllPositions();
     }
 	
-    
     /*
      * @notice
      *  Function available for providers to open the joint position:
@@ -682,7 +681,6 @@ abstract contract Tripod {
                 }
             }
         }
-
         return quoteRebalance(_aBalance, _bBalance, _cBalance);
     }
 
