@@ -41,7 +41,9 @@ contract ProviderStrategy is BaseStrategyInitializable {
     bool public forceLiquidate;
     bool public launchHarvest;
 
-    constructor(address _vault) BaseStrategyInitializable(_vault) {}
+    constructor(address _vault) BaseStrategyInitializable(_vault) {
+        healthCheck = 0xDDCea799fF1699e98EDF118e0629A974Df7DF012;
+    }
 
     function name() external view override returns (string memory) {
         return

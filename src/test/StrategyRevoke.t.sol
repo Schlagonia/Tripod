@@ -7,7 +7,7 @@ contract StrategyRevokeTest is StrategyFixture {
     function setUp() public override {
         super.setUp();
     }
-
+/*
     function testRevokeStrategyFromVault(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         deal(address(want), user, _amount);
@@ -52,4 +52,5 @@ contract StrategyRevokeTest is StrategyFixture {
         strategy.harvest();
         assertRelApproxEq(want.balanceOf(address(vault)), _amount, DELTA);
     }
+    */
 }

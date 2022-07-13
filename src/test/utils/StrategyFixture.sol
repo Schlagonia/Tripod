@@ -2,14 +2,16 @@
 pragma solidity ^0.8.12;
 pragma abicoder v2;
 
+import "forge-std/console.sol";
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ExtendedTest} from "./ExtendedTest.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IVault} from "../../interfaces/Vault.sol";
-
-// NOTE: if the name of the strat or file changes this needs to be updated
-import {Strategy} from "../../Strategy.sol";
+import {CurveTripod} from "../../DeXes/CurveTripod.sol";
+import {ProviderStrategy} from "../../ProviderStrategy.sol";
+import {AggregatorV3Interface} from "../../interfaces/AggregatorV3Interface.sol";
 
 // Artifact paths for deploying from the deps folder, assumes that the command is run from
 // the project root.
@@ -19,16 +21,27 @@ string constant vaultArtifact = "artifacts/Vault.json";
 contract StrategyFixture is ExtendedTest {
     using SafeERC20 for IERC20;
 
-    IVault public vault;
-    Strategy public strategy;
+    struct AssetFixture { // To test multiple assets
+        IVault vault;
+        ProviderStrategy strategy;
+        IERC20 want;
+        string name;
+    }
+
+    CurveTripod public tripod;
     IERC20 public weth;
-    IERC20 public want;
+
+    address public pool = 0xD51a44d3FaE010294C616388b506AcdA1bfAAE46;
+
+    string[] public wantTokens;
+    AssetFixture[] public assetFixtures;
+    mapping(address => AssetFixture) public fixture;
 
     mapping(string => address) public tokenAddrs;
     mapping(string => uint256) public tokenPrices;
 
     address public gov = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52;
-    address public user = address(1);
+    address public user = address(1337);
     address public whale = address(2);
     address public rewards = address(3);
     address public guardian = address(4);
@@ -36,53 +49,62 @@ contract StrategyFixture is ExtendedTest {
     address public strategist = address(6);
     address public keeper = address(7);
 
-    uint256 public minFuzzAmt;
+    address public constant yearnTreasuryVault = 0x93A62dA5a14C80f265DAbC077fCEE437B1a0Efde;
+
+    uint256 public minFuzzAmt = 1 ether; // 10 cents
     // @dev maximum amount of want tokens deposited based on @maxDollarNotional
-    uint256 public maxFuzzAmt;
-    // @dev maximum dollar amount of tokens to be deposited
-    uint256 public maxDollarNotional = 1_000_000;
-    // @dev maximum dollar amount of tokens for single large amount
-    uint256 public bigDollarNotional = 49_000_000;
-    // @dev used for non-fuzz tests to test large amounts
-    uint256 public bigAmount;
+    uint256 public maxFuzzAmt = 25_000_000 ether; // $25M
     // Used for integer approximation
-    uint256 public constant DELTA = 10**5;
+    uint256 public constant DELTA = 10**4;
 
     function setUp() public virtual {
         _setTokenPrices();
         _setTokenAddrs();
 
-        // Choose a token from the tokenAddrs mapping, see _setTokenAddrs for options
-        string memory token = "DAI";
         weth = IERC20(tokenAddrs["WETH"]);
-        want = IERC20(tokenAddrs[token]);
 
-        (address _vault, address _strategy) = deployVaultAndStrategy(
-            address(want),
-            gov,
-            rewards,
-            "",
-            "",
-            guardian,
-            management,
-            keeper,
-            strategist
+        //SEt up what tokens we are using in the LP
+        wantTokens.push("USDT");
+        wantTokens.push("WETH");
+        wantTokens.push("WBTC");
+
+        for (uint8 i = 0; i < wantTokens.length; ++i) {
+            string memory _tokenToTest = wantTokens[i];
+            IERC20 _want = IERC20(tokenAddrs[_tokenToTest]);
+
+            (address _vault, address _strategy) = deployVaultAndStrategy(
+                address(_want),
+                gov,
+                rewards,
+                "",
+                "",
+                guardian,
+                management,
+                keeper,
+                strategist
+            );
+
+            assetFixtures.push(AssetFixture(IVault(_vault), ProviderStrategy(_strategy), _want, _tokenToTest));
+            fixture[address(_want)] = assetFixtures[i];
+
+            vm.label(address(_vault), string(abi.encodePacked(_tokenToTest, "Vault")));
+            vm.label(address(_strategy), string(abi.encodePacked(_tokenToTest, "Strategy")));
+            vm.label(address(_want), _tokenToTest);
+        }
+
+        //Deploye Tripod Strategy
+        deployTripod(
+            address(assetFixtures[0].strategy),
+            address(assetFixtures[1].strategy),
+            address(assetFixtures[2].strategy),
+            address(weth),
+            pool
         );
-        vault = IVault(_vault);
-        strategy = Strategy(_strategy);
-
-        minFuzzAmt = 10**vault.decimals() / 10;
-        maxFuzzAmt =
-            uint256(maxDollarNotional / tokenPrices[token]) *
-            10**vault.decimals();
-        bigAmount =
-            uint256(bigDollarNotional / tokenPrices[token]) *
-            10**vault.decimals();
+   
+        //Add the tripod to each providor strategy
+        setTripod();
 
         // add more labels to make your traces readable
-        vm.label(address(vault), "Vault");
-        vm.label(address(strategy), "Strategy");
-        vm.label(address(want), "Want");
         vm.label(gov, "Gov");
         vm.label(user, "User");
         vm.label(whale, "Whale");
@@ -91,8 +113,6 @@ contract StrategyFixture is ExtendedTest {
         vm.label(management, "Management");
         vm.label(strategist, "Strategist");
         vm.label(keeper, "Keeper");
-
-        // do here additional setup
     }
 
     // Deploys a vault
@@ -126,9 +146,40 @@ contract StrategyFixture is ExtendedTest {
         return address(_vault);
     }
 
+    function deployTripod(
+        address _providerA,
+        address _providerB,
+        address _providerC,
+        address _referenceToken,
+        address _pool
+    ) internal {
+        tripod = new CurveTripod(
+            _providerA,
+            _providerB,
+            _providerC,
+            _referenceToken,
+            _pool
+        );
+
+        tripod.setKeeper(keeper);
+    }
+
+    function setTripod() internal {
+        for (uint8 i = 0; i < assetFixtures.length; ++i) {
+            ProviderStrategy _provider = assetFixtures[i].strategy;
+
+            vm.prank(gov);
+            _provider.setJoint(address(tripod));
+        }
+    }
+
     // Deploys a strategy
-    function deployStrategy(address _vault) public returns (address) {
-        Strategy _strategy = new Strategy(_vault);
+    function deployStrategy(
+        address _vault
+    ) public returns (address) {
+        ProviderStrategy _strategy = new ProviderStrategy(
+            _vault
+        );
 
         return address(_strategy);
     }
@@ -157,16 +208,33 @@ contract StrategyFixture is ExtendedTest {
         IVault _vault = IVault(_vaultAddr);
 
         vm.prank(_strategist);
-        _strategyAddr = deployStrategy(_vaultAddr);
-        Strategy _strategy = Strategy(_strategyAddr);
-
-        vm.prank(_strategist);
-        _strategy.setKeeper(_keeper);
+        _strategyAddr = deployStrategy(
+            _vaultAddr
+        );
+        ProviderStrategy _strategy = ProviderStrategy(_strategyAddr);
 
         vm.prank(_gov);
         _vault.addStrategy(_strategyAddr, 10_000, 0, type(uint256).max, 1_000);
 
         return (address(_vault), address(_strategy));
+    }
+
+    function deposit(
+        IVault _vault, 
+        address depositer, 
+        address _want,
+        uint256 amount
+    ) internal {
+        deal(_want, depositer, amount);
+        console.log("Balance ", IERC20(_want).balanceOf(depositer));
+        // Deposit to the vault and harvest
+        vm.prank(depositer);
+        IERC20(_want).approve(address(_vault), amount);
+        skip(1);
+        console.log("Approval ", IERC20(_want).allowance(depositer, address(_vault)));
+        console.log("approved, depositing ", amount);
+        vm.prank(depositer);
+        _vault.deposit(amount);
     }
 
     function _setTokenAddrs() internal {
@@ -180,12 +248,11 @@ contract StrategyFixture is ExtendedTest {
     }
 
     function _setTokenPrices() internal {
-        tokenPrices["WBTC"] = 60_000;
-        tokenPrices["WETH"] = 4_000;
-        tokenPrices["LINK"] = 20;
-        tokenPrices["YFI"] = 35_000;
-        tokenPrices["USDT"] = 1;
-        tokenPrices["USDC"] = 1;
-        tokenPrices["DAI"] = 1;
+        tokenPrices["WBTC"] = AggregatorV3Interface(0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c).latestAnswer();
+        tokenPrices["WETH"] = AggregatorV3Interface(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419).latestAnswer();
+        tokenPrices["YFI"] = 5_000;
+        tokenPrices["USDT"] = AggregatorV3Interface(0x3E7d1eAB13ad0104d2750B8863b489D65364e32D).latestAnswer();
+        tokenPrices["USDC"] = AggregatorV3Interface(0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6).latestAnswer();
+        tokenPrices["DAI"] = AggregatorV3Interface(0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9).latestAnswer();
     }
-}
+}   

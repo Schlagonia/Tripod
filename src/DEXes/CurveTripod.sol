@@ -2,9 +2,11 @@
 pragma solidity ^0.8.12;
 pragma experimental ABIEncoderV2;
 
+import "forge-std/console.sol";
+
 // Import necessary libraries and interfaces:
 // NoHedgeJoint to inherit from
-import "../Hedges/NoHedgeJoint.sol";
+import "../Hedges/NoHedgeTripod.sol";
 
 import {ICurveFi} from "../interfaces/Curve/ICurveFi.sol";
 import {IUniswapV2Router02} from "../interfaces/uniswap/V2/IUniswapV2Router02.sol";
@@ -236,9 +238,10 @@ contract CurveTripod is NoHedgeTripod {
         ICurveFi _pool = ICurveFi(pool);
         //User the VP to get dollar value then oracles to adjust;
         //Could use actual pool values, but that could be manipulated
-
+        uint256 lpBalance = totalLpBalance();
+        if(lpBalance == 0) return (0, 0, 0);
         // use calc_Withdrawone_coin for a third of each
-        uint256 third = totalLpBalance() * 3_333 / 10_000;
+        uint256 third = lpBalance * 3_333 / 10_000;
         _balanceA = _pool.calc_withdraw_one_coin(third, index[tokenA]);
         _balanceB = _pool.calc_withdraw_one_coin(third, index[tokenB]);
         _balanceC = _pool.calc_withdraw_one_coin(third, index[tokenC]);
@@ -252,6 +255,7 @@ contract CurveTripod is NoHedgeTripod {
     function pendingRewards() public view override returns (uint256[] memory) {
         // Initialize the array to same length as reward tokens
         uint256[] memory _amountPending = new uint256[](rewardTokens.length);
+        console.log("Reward tokens length ", rewardTokens.length);
         //Save the earned CrV rewards to 0 where crv will be
         _amountPending[0] = rewardsContract.earned(address(this));
         //Just place 0 for convex, avoids complex math and underestimates rewards for safety
@@ -371,7 +375,73 @@ contract CurveTripod is NoHedgeTripod {
 
     //To swap out of the reward tokens
     function swapRewardTokens() internal override {
+        address _tokenA = tokenA;
+        address _tokenB = tokenB;
+        address _tokenC = tokenC;
+        address[] memory _rewardTokens = rewardTokens;
+        for (uint256 i = 0; i < _rewardTokens.length; i++) {
+            address reward = _rewardTokens[i];
+            uint256 _rewardBal = IERC20(reward).balanceOf(address(this));
+            // If the reward token is either A B or C, don't swap
+            if (reward == _tokenA || reward == _tokenB || reward == _tokenC || _rewardBal == 0) {
+                continue;
+            // If the referenceToken is either A B or C, swap rewards against it 
+            } else if (usingReference) {
+                    swapReward(reward, referenceToken, _rewardBal, 0); 
+            } else {
+                // Assume that position has already been liquidated
+                //Instead this should just return the token with the lowest ratio
+                (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
+                    balanceOfA(),
+                    balanceOfB(),
+                    balanceOfC()
+                );
+       
+                //If everything is equal use A   
+                if(ratioA <= ratioB && ratioA <= ratioC) {
+                    swapReward(reward, _tokenA, _rewardBal, 0);
+                } else if(ratioB <= ratioC) {
+                    swapReward(reward, _tokenB, _rewardBal, 0);
+                } else {
+                    swapReward(reward, _tokenC, _rewardBal, 0);
+                }
+            }
+        }
+    }
 
+    /*
+    * @notice
+    *   Internal function to swap the reward tokens into one of the provider tokens
+    *   Will use a V2 router since it could be a wide array of tokens
+    * @param _from, address of the reward token we are swapping from
+    * @param _t0, address of the token we are swapping to
+    * @param _amount, amount to swap from
+    * @param _minOut, minimum out we will accept
+    * @returns the amount swapped to
+    */
+    function swapReward(
+        address _from, 
+        address _to, 
+        uint256 _amountIn, 
+        uint256 _minOut
+    ) internal returns (uint256) {
+        // Do NOT use Crv pool
+        IUniswapV2Router02 _router = IUniswapV2Router02(router);
+
+        uint256 prevBalance = IERC20(_to).balanceOf(address(this));
+        
+        // Allow necessary amount for router
+        _checkAllowance(router, IERC20(_from), _amountIn);
+
+        _router.swapExactTokensForTokens(
+            _amountIn, 
+            _minOut, 
+            getTokenOutPath(_from, _to), 
+            address(this), 
+            block.timestamp
+        );
+
+        return IERC20(_to).balanceOf(address(this)) - prevBalance;
     }
 
     /*
@@ -384,12 +454,16 @@ contract CurveTripod is NoHedgeTripod {
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
      * @return swapped amount
      */
-    function swap(   //This needs to be changed to account for reward tokens, needs to also check for minAmountToSell
+    function swap(
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn,
         uint256 _minOutAmount
     ) internal override returns (uint256) {
+        if(_amountIn <= minAmountToSell) {
+            return 0;
+        }
+
         require(_tokenTo == tokenA || _tokenTo == tokenB || _tokenTo == tokenC, "must be valid token"); 
         require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid token");
         uint256 prevBalance = IERC20(_tokenTo).balanceOf(address(this));
@@ -407,8 +481,8 @@ contract CurveTripod is NoHedgeTripod {
                 address(this),
                 block.timestamp
             );
-
             return IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
+
         } else {
             ICurveFi _pool = ICurveFi(pool);
         
@@ -416,8 +490,8 @@ contract CurveTripod is NoHedgeTripod {
             _checkAllowance(pool, IERC20(_tokenFrom), _amountIn);
             // Perform swap
             _pool.exchange(
-                _getCRVPoolIndex(_tokenFrom), 
-                _getCRVPoolIndex(_tokenTo),
+                index[_tokenFrom], 
+                index[_tokenTo],
                 _amountIn, 
                 _minOutAmount
             );
@@ -440,9 +514,18 @@ contract CurveTripod is NoHedgeTripod {
         address _tokenTo,
         uint256 _amountIn
     ) internal view override returns (uint256) {
+        if(_amountIn <= minAmountToSell) {
+            return 0;
+        }
+
         require(_tokenTo == tokenA || _tokenTo == tokenB || _tokenTo == tokenC, "must be valid token"); 
-        require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid token");
-        if(useUniRouter){
+
+        //We should only use curve if from and to is one of the LP tokens AND useUniRouter == false
+        bool useCurve = false;
+        if(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC) useCurve = true;
+        if(useUniRouter) useCurve = false;
+
+        if(!useCurve) {
             // Do NOT use crv pool use V2 router
             IUniswapV2Router02 _router = IUniswapV2Router02(router);
 
@@ -458,8 +541,8 @@ contract CurveTripod is NoHedgeTripod {
 
             // Call the quote function in CRV pool
             return _pool.get_dy(
-                _getCRVPoolIndex(_tokenFrom), 
-                _getCRVPoolIndex(_tokenTo), 
+                index[_tokenFrom], 
+                index[_tokenTo], 
                 _amountIn
             );
         }
@@ -490,29 +573,34 @@ contract CurveTripod is NoHedgeTripod {
      *  Function used by governance to swap tokens manually if needed, can be used when closing 
      * the LP position manually and need some re-balancing before sending funds back to the 
      * providers
-     * @param swapPath, path of addresses to swap, should be 2 and always tokenA <> tokenB
+     * @param tokenFrom, address of token we are swapping from
+     * @param tokenTo, address of token we are swapping to
      * @param swapInAmount, amount of swapPath[0] to swap for swapPath[1]
      * @param minOutAmount, minimum amount of want out
+     * @param core, bool repersenting if this is a swap from LP -> LP token or if one is a none LP token
      * @return swapped amount
      */
     function swapTokenForTokenManually(
         address tokenFrom,
         address tokenTo,
         uint256 swapInAmount,
-        uint256 minOutAmount
+        uint256 minOutAmount,
+        bool core
     ) external onlyGovernance override returns (uint256) {
-
-        if(true) {
+        require(swapInAmount > 0, "cant swap 0");
+        require(IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "Not enough tokens");
+        
+        if(core) {
             return swap(
-                tokenA,
-                tokenB,
+                tokenFrom,
+                tokenTo,
                 swapInAmount,
                 minOutAmount
                 );
         } else {
-            return swap(
-                tokenB,
-                tokenA,
+            return swapReward(
+                tokenFrom,
+                tokenTo,
                 swapInAmount,
                 minOutAmount
                 );
@@ -531,7 +619,7 @@ contract CurveTripod is NoHedgeTripod {
     /*
      * @notice
      *  Function used by keepers to assess whether to harvest the joint and compound generated
-     * fees into the existing position, checks whether both pending fee amounts (tokenA and B)
+     * fees into the existing position
      * are greater than minRewardToHarvest
      * @param callCost, call cost parameter
      * @return bool amount assessing whether to harvest or not
@@ -578,6 +666,15 @@ contract CurveTripod is NoHedgeTripod {
      */
     function tend() external override onlyKeepers {
         getReward();
+    }
+
+    /*
+    * @notice
+    *   Trigger to tell Keepers if they should call tend()
+    *   Can be implemented with an overRide if applicable
+    */
+    function tendTrigger(uint256 /*callCost*/) external view override returns (bool) {
+        return false;
     }
 
         /*

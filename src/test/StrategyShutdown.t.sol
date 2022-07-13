@@ -7,7 +7,7 @@ contract StrategyShutdownTest is StrategyFixture {
     function setUp() public override {
         super.setUp();
     }
-
+/*
     function testVaultShutdownCanWithdraw(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         deal(address(want), user, _amount);
@@ -78,4 +78,5 @@ contract StrategyShutdownTest is StrategyFixture {
         assertGe(want.balanceOf(address(vault)), _amount); // The vault has all funds
         // NOTE: May want to tweak this based on potential loss during migration
     }
+    */
 }

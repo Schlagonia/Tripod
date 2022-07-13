@@ -10,7 +10,7 @@ contract StrategyMigrationTest is StrategyFixture {
     function setUp() public override {
         super.setUp();
     }
-
+/*
     // TODO: Add tests that show proper migration of the strategy to a newer one
     // Use another copy of the strategy to simmulate the migration
     // Show that nothing is lost.
@@ -35,4 +35,5 @@ contract StrategyMigrationTest is StrategyFixture {
         vault.migrateStrategy(address(strategy), address(newStrategy));
         assertRelApproxEq(newStrategy.estimatedTotalAssets(), _amount, DELTA);
     }
+    */
 }

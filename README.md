@@ -1,4 +1,4 @@
-# This has been adapted from the previous Join Strategies found here:
+# This has been adapted from the previous Joint Strategies found here:
 
 https://github.com/fp-crypto/joint-strategy/tree/fp-univ3
 

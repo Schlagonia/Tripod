@@ -11,6 +11,8 @@ import "./interfaces/IERC20Extended.sol";
 
 import "./ySwapper.sol";
 
+import "forge-std/console.sol";
+
 import {VaultAPI} from "@yearnvaults/contracts/BaseStrategy.sol";
 
 interface ProviderStrategy {
@@ -49,7 +51,7 @@ abstract contract Tripod {
     // Reference token to use in swaps: WETH, WFTM...
     address public referenceToken;
     // Bool repersenting if one of the tokens is == referencetoken
-    bool private usingReference;
+    bool internal usingReference;
     // Array containing reward tokens
     address[] public rewardTokens;
 
@@ -111,18 +113,19 @@ abstract contract Tripod {
     function isGovernance() internal view returns (bool) {
         return
             msg.sender == providerA.vault().governance() ||
-            msg.sender == providerB.vault().governance();
+            msg.sender == providerB.vault().governance() ||
+            msg.sender == providerC.vault().governance();
     }
 
     function isVaultManager() internal view returns (bool) {
         return
             msg.sender == providerA.vault().management() ||
-            msg.sender == providerB.vault().management();
+            msg.sender == providerB.vault().management() ||
+            msg.sender == providerC.vault().management();
     }
 
     function isKeeper() internal view returns (bool) {
-        return
-            (msg.sender == keeper);
+        return msg.sender == keeper;
     }
 
     function isProvider() internal view returns (bool) {
@@ -656,7 +659,8 @@ abstract contract Tripod {
         uint256[] memory _rewardsPending = pendingRewards();
         address[] memory _rewardTokens = rewardTokens;
         address reward;
-        for (uint256 i = 0; i < _rewardTokens.length; i++) {
+        console.log("Rewards beign accounted for");
+        for (uint256 i = 0; i < _rewardsPending.length; i++) {
             reward = _rewardTokens[i];
             if (reward == tokenA) {
                 _aBalance += _rewardsPending[i];
@@ -694,7 +698,10 @@ abstract contract Tripod {
         uint256 startingB,
         uint256 startingC
     ) internal view returns(uint256, uint256, uint256) {
-
+        if(startingA == 0 || startingB == 0 || startingC == 0) {
+            return (startingA, startingB, startingC);
+        }
+        console.log("Quoting Rebalance");
         (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
                     startingA,
                     startingB,
@@ -710,7 +717,7 @@ abstract contract Tripod {
         unchecked{
             avgRatio = (ratioA + ratioB + ratioC) / 3;
         }
-
+        console.log("AVg Ratio ", avgRatio);
         uint256 change0;
         uint256 change1;
         uint256 change2;
@@ -964,7 +971,7 @@ abstract contract Tripod {
                 //If everything is equal use A   
                 if(ratioA <= ratioB && ratioA <= ratioC) {
                     swap(reward, _tokenA, _rewardBal, 0);
-                } else if(ratioB < ratioA && ratioB <= ratioC) {
+                } else if(ratioB <= ratioC) {
                     swap(reward, _tokenB, _rewardBal, 0);
                 } else {
                     swap(reward, _tokenC, _rewardBal, 0);
@@ -1140,7 +1147,8 @@ abstract contract Tripod {
         address tokenFrom,
         address tokenTo,
         uint256 swapInAmount,
-        uint256 minOutAmount
+        uint256 minOutAmount,
+        bool core
     ) external virtual returns (uint256);
 
     /*
