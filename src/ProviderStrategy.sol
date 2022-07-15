@@ -38,7 +38,6 @@ contract ProviderStrategy is BaseStrategyInitializable {
 
     address public tripod;
 
-    bool public forceLiquidate;
     bool public launchHarvest;
 
     constructor(address _vault) BaseStrategyInitializable(_vault) {
@@ -202,21 +201,13 @@ contract ProviderStrategy is BaseStrategyInitializable {
         keeper = _tripod;
     }
 
-    function setForceLiquidate(bool _forceLiquidate)
-        external
-        onlyEmergencyAuthorized
-    {
-        forceLiquidate = _forceLiquidate;
-    }
-
     function liquidateAllPositions()
         internal
         virtual
         override
         returns (uint256 _amountFreed)
     {
-        uint256 expectedBalance = estimatedTotalAssets();
-
+        //Closes any open positions and sets DontInvestWant == true
         TripodAPI(tripod).closeAllPositions();
 
 	    uint256 amount = want.balanceOf(tripod);
@@ -224,12 +215,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
             want.safeTransferFrom(tripod, address(this), amount);
         }
         _amountFreed = balanceOfWant();
-        
-        // NOTE: we accept a 1% difference before reverting
-        require(
-            forceLiquidate || (expectedBalance * 9_900) / 10_000 < _amountFreed,
-            "!liquidation"
-        );
+
     }
 
     function ethToWant(uint256 _amtInWei)

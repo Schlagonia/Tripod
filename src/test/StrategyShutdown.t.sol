@@ -2,81 +2,111 @@
 pragma solidity ^0.8.12;
 
 import {StrategyFixture} from "./utils/StrategyFixture.sol";
+import "forge-std/console.sol";
+
+import {ProviderStrategy} from "../ProviderStrategy.sol";
+import {CurveTripod} from "../DEXes/CurveTripod.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
+import {IVault} from "../interfaces/Vault.sol";
 
 contract StrategyShutdownTest is StrategyFixture {
     function setUp() public override {
         super.setUp();
     }
-/*
+
     function testVaultShutdownCanWithdraw(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
+        depositAllVaultsAndHarvest(_amount);
 
-        // Deposit to the vault
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        assertRelApproxEq(want.balanceOf(address(vault)), _amount, DELTA);
+        //Pick a random vault to shutdown
+        uint256 index = _amount % 3;
+        console.log("Index ", index);
 
-        uint256 bal = want.balanceOf(user);
+        AssetFixture memory _fixture = assetFixtures[index];
+        IVault _vault = _fixture.vault;
+        ProviderStrategy _provider = _fixture.strategy;
+        IERC20 _want = _fixture.want;
+
+
+        uint256 bal = _want.balanceOf(user);
         if (bal > 0) {
             vm.prank(user);
-            want.transfer(address(0), bal);
+            _want.transfer(address(0), bal);
         }
 
-        // Harvest 1: Send funds through the strategy
         skip(7 hours);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
-
+        uint256 preBalance = _provider.estimatedTotalAssets();
         // Set Emergency
         vm.prank(gov);
-        vault.setEmergencyShutdown(true);
+        _vault.setEmergencyShutdown(true);
+
+        vm.prank(gov);
+        tripod.setDontInvestWant(true);
+
+        //Have to harvest first or it will report a loss
+        //Testing harvesting the provider directly
+        vm.prank(keeper);
+        tripod.harvest();
 
         // Withdraw (does it work, do you get what you expect)
         vm.prank(user);
-        vault.withdraw();
-
-        assertRelApproxEq(want.balanceOf(user), _amount, DELTA);
+        _vault.withdraw();
+        console.log("Withdrew ", _want.balanceOf(user));
+        assertGe(_want.balanceOf(user), preBalance);
     }
 
     function testBasicShutdown(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
-
-        // Deposit to the vault
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        assertRelApproxEq(want.balanceOf(address(vault)), _amount, DELTA);
-
-        // Harvest 1: Send funds through the strategy
-        skip(1 days);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
+        depositAllVaultsAndHarvest(_amount);
 
         // Earn interest
-        skip(1 days);
+        skip(2 days);
 
         // Harvest 2: Realize profit
-        vm.prank(strategist);
-        strategy.harvest();
-        skip(6 hours);
+        vm.prank(keeper);
+        tripod.harvest();
+
+
+        skip(1 days);
+
+        //Pick a random Strategy to shutdown
+        uint256 index = _amount % 3;
+        console.log("Index ", index);
+
+        AssetFixture memory _fixture = assetFixtures[index];
+        IVault _vault = _fixture.vault;
+        ProviderStrategy _provider = _fixture.strategy;
+        IERC20 _want = _fixture.want;
 
         // Set emergency
         vm.prank(strategist);
-        strategy.setEmergencyExit();
+        _provider.setEmergencyExit();
+
+        uint256 preBalance = _provider.estimatedTotalAssets();
 
         vm.prank(strategist);
-        strategy.harvest(); // Remove funds from strategy
+        _provider.harvest(); // Remove funds from strategy
 
-        assertEq(want.balanceOf(address(strategy)), 0);
-        assertGe(want.balanceOf(address(vault)), _amount); // The vault has all funds
-        // NOTE: May want to tweak this based on potential loss during migration
+        assertEq(_want.balanceOf(address(_provider)), 0);
+        assertGe(_want.balanceOf(address(_vault)), preBalance); // The vault has all funds
     }
-    */
+
+    function testDontInvestWant(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        depositAllVaultsAndHarvest(_amount);
+
+        skip(1 days);
+
+        vm.prank(gov);
+        tripod.setDontInvestWant(true);
+
+        vm.prank(keeper);
+        tripod.harvest();
+
+        for(uint8 i = 0; i < assetFixtures.length; ++i) {
+            assertEq(assetFixtures[i].want.balanceOf(address(assetFixtures[i].strategy)), assetFixtures[i].strategy.estimatedTotalAssets());
+        }
+    }
+    
 }

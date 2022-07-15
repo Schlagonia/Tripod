@@ -235,16 +235,20 @@ contract CurveTripod is NoHedgeTripod {
         override
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
-        ICurveFi _pool = ICurveFi(pool);
         //User the VP to get dollar value then oracles to adjust;
         //Could use actual pool values, but that could be manipulated
         uint256 lpBalance = totalLpBalance();
         if(lpBalance == 0) return (0, 0, 0);
+
+        ICurveFi _pool = ICurveFi(pool);
         // use calc_Withdrawone_coin for a third of each
         uint256 third = lpBalance * 3_333 / 10_000;
         _balanceA = _pool.calc_withdraw_one_coin(third, index[tokenA]);
         _balanceB = _pool.calc_withdraw_one_coin(third, index[tokenB]);
         _balanceC = _pool.calc_withdraw_one_coin(third, index[tokenC]);
+        console.log("Expected A balance ", _balanceA);
+        console.log("Expected B balance ", _balanceB);
+        console.log("Expected C balance ", _balanceC);
     }
 
     /*
@@ -366,7 +370,7 @@ contract CurveTripod is NoHedgeTripod {
             uint256 _minOutTokenC
     ) external onlyVaultManagers {
         rewardsContract.withdrawAndUnwrap(_amount, harvestExtras);
-        burnLP(_amount);
+        burnLP(_amount);   ///This should be implemented manually in amounts - currentBalance
         require(balanceOfA() >= _minOutTokenA && 
                 balanceOfB() >= _minOutTokenB &&
                 balanceOfC() >= _minOutTokenC,
@@ -586,7 +590,7 @@ contract CurveTripod is NoHedgeTripod {
         uint256 swapInAmount,
         uint256 minOutAmount,
         bool core
-    ) external onlyGovernance override returns (uint256) {
+    ) external override onlyVaultManagers returns (uint256) {
         require(swapInAmount > 0, "cant swap 0");
         require(IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "Not enough tokens");
         

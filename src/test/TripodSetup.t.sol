@@ -47,12 +47,12 @@ contract TripodSetupTest is StrategyFixture {
         ProviderStrategy providerB = assetFixtures[1].strategy;
         ProviderStrategy providerC = assetFixtures[2].strategy;
         console.log("Depositing Funds");
-        for(uint8 i = 1; i < assetFixtures.length; ++i) {
+        for(uint8 i = 0; i < assetFixtures.length; ++i) {
             AssetFixture memory _fixture = assetFixtures[i];
             IERC20 _want = _fixture.want;
             IVault _vault = _fixture.vault;
             //need to change the _amount into equal amounts dependant on the want based on oracle of 1e8
-            uint256 toDeposit = _amount * tokenPrices[_fixture.name] / (10 ** (8 + (18 - IERC20Extended(address(_want)).decimals())));
+            uint256 toDeposit = _amount * 1e8 / (tokenPrices[_fixture.name] * (10 ** (18 - IERC20Extended(address(_want)).decimals())));
             console.log("To deposit", toDeposit);
             deposit(_vault, user, address(_want), toDeposit);
   
@@ -65,8 +65,8 @@ contract TripodSetupTest is StrategyFixture {
         tripod.harvest();
         console.log("harvested");
         assertEq(tripod.balanceOfPool(), 0);
-        //assertGt(tripod.balanceOfStake(), 0);
-        //assertRelApproxEq(providerA.estimatedTotalAssets(), tripod.invested(address(providerA.want())) + tripod.balanceOfA(), DELTA);
+        assertGt(tripod.balanceOfStake(), 0);
+        assertRelApproxEq(providerA.estimatedTotalAssets(), tripod.invested(address(providerA.want())) + tripod.balanceOfA(), DELTA);
         assertRelApproxEq(providerB.estimatedTotalAssets(), tripod.invested(address(providerB.want())) + tripod.balanceOfB(), DELTA);
         assertRelApproxEq(providerC.estimatedTotalAssets(), tripod.invested(address(providerC.want())) + tripod.balanceOfC(), DELTA);
 

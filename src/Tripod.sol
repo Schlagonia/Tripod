@@ -402,6 +402,8 @@ abstract contract Tripod {
      */
     function closeAllPositions() external onlyProviders {
         _closeAllPositions();
+        //This is only called during liquidateAllPositions after a strat or vault shutdown so we should not reinvest
+        dontInvestWant = true;
     }
 	
     /*
@@ -698,7 +700,7 @@ abstract contract Tripod {
         uint256 startingB,
         uint256 startingC
     ) internal view returns(uint256, uint256, uint256) {
-        if(startingA == 0 || startingB == 0 || startingC == 0) {
+        if(invested[tokenA] == 0 || invested[tokenB] == 0 || invested[tokenC] == 0) {
             return (startingA, startingB, startingC);
         }
         console.log("Quoting Rebalance");
@@ -725,20 +727,23 @@ abstract contract Tripod {
         if(ratioA > avgRatio) {
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
+                console.log("quoting A and B to C");
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
                 return ((startingA - change0), 
                             (startingB - change1), 
                                 (startingC + change2));
             } else if (ratioC > avgRatio) {
+                console.log("quoting A and C to B");
                 //swapping A and C -> B
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
                 return ((startingA - change0), 
-                            (startingB + change1), 
-                                (startingC - change2));
+                            (startingB + change2), 
+                                (startingC - change1));
             } else {
                 //Swapping A -> B and C
+                console.log("quoting A to B and C");
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC, ratioC);
                 return ((startingA - change0), 
@@ -748,6 +753,7 @@ abstract contract Tripod {
         } else if (ratioB > avgRatio) {
             //We know A is below avg so we just need to check C
             if (ratioC > avgRatio) {
+                console.log("quoting B and C to A");
                 //Swap B and C -> A
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
@@ -756,6 +762,7 @@ abstract contract Tripod {
                                 (startingC - change1));
             } else {
                 //swapping B -> C and A
+                console.log("quoting B to C and A");
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(avgRatio, tokenB, ratioB, tokenA, ratioA, tokenC, ratioC);
                 return ((startingA + change1), 
@@ -765,6 +772,7 @@ abstract contract Tripod {
         } else {
             //We know A and B are below so C has to be the only one above the avg
             //swap C -> A and B
+            console.log("Quoting C to A and B");
             (change0, change1, change2) = 
                 quoteSwapOneToTwo(avgRatio, tokenC, ratioC, tokenA, ratioA, tokenB, ratioB);
             return ((startingA + change1), 
@@ -858,7 +866,7 @@ abstract contract Tripod {
             toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
             toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
         }
-
+        console.log("ToSwapFrom 0", toSwapFrom0, " toSwapFrom1 ", toSwapFrom1);
         uint256 amountOut = quote(
             token0Address, 
             toTokenAddress, 

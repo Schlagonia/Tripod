@@ -7,50 +7,23 @@ contract StrategyRevokeTest is StrategyFixture {
     function setUp() public override {
         super.setUp();
     }
-/*
+
     function testRevokeStrategyFromVault(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
+        depositAllVaultsAndHarvest(_amount);
 
-        // Deposit to the vault and harvest
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
-
+        //Pick a random Strategy to shutdown
+        uint256 i = _amount % 3;
+        skip(1 days);
         // In order to pass these tests, you will need to implement prepareReturn.
         // TODO: uncomment the following lines.
-        // vm.prank(gov);
-        // vault.revokeStrategy(address(strategy));
-        // skip(1);
-        // vm.prank(strategist);
-        // strategy.harvest();
-        // assertRelApproxEq(want.balanceOf(address(vault)), _amount, DELTA);
-    }
-
-    function testRevokeStrategyFromStrategy(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
-
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
-
         vm.prank(gov);
-        strategy.setEmergencyExit();
+        assetFixtures[i].vault.revokeStrategy(address(assetFixtures[i].strategy));
         skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(want.balanceOf(address(vault)), _amount, DELTA);
+        uint256 preBalance = assetFixtures[i].strategy.estimatedTotalAssets();
+        vm.prank(keeper);
+        tripod.harvest();
+        assertGe(assetFixtures[i].want.balanceOf(address(assetFixtures[i].vault)), preBalance);
     }
-    */
+
 }

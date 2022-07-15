@@ -3,7 +3,7 @@ pragma solidity ^0.8.12;
 pragma abicoder v2;
 
 import "forge-std/console.sol";
-
+import {IERC20Extended} from "../../interfaces/IERC20Extended.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ExtendedTest} from "./ExtendedTest.sol";
@@ -31,6 +31,9 @@ contract StrategyFixture is ExtendedTest {
     CurveTripod public tripod;
     IERC20 public weth;
 
+    address public crv = 0xD533a949740bb3306d119CC777fa900bA034cd52;
+    address public cvx = 0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B;
+
     address public pool = 0xD51a44d3FaE010294C616388b506AcdA1bfAAE46;
 
     string[] public wantTokens;
@@ -51,11 +54,11 @@ contract StrategyFixture is ExtendedTest {
 
     address public constant yearnTreasuryVault = 0x93A62dA5a14C80f265DAbC077fCEE437B1a0Efde;
 
-    uint256 public minFuzzAmt = 1 ether; // 10 cents
+    uint256 public minFuzzAmt = 10 ether; // 10 cents
     // @dev maximum amount of want tokens deposited based on @maxDollarNotional
-    uint256 public maxFuzzAmt = 25_000_000 ether; // $25M
+    uint256 public maxFuzzAmt = 2_500_000 ether; // $2.5M
     // Used for integer approximation
-    uint256 public constant DELTA = 10**4;
+    uint256 public constant DELTA = 10**2;
 
     function setUp() public virtual {
         _setTokenPrices();
@@ -226,15 +229,47 @@ contract StrategyFixture is ExtendedTest {
         uint256 amount
     ) internal {
         deal(_want, depositer, amount);
-        console.log("Balance ", IERC20(_want).balanceOf(depositer));
-        // Deposit to the vault and harvest
-        vm.prank(depositer);
-        IERC20(_want).approve(address(_vault), amount);
+
+        vm.startPrank(depositer);
+        IERC20(_want).safeApprove(address(_vault), amount);
         skip(1);
-        console.log("Approval ", IERC20(_want).allowance(depositer, address(_vault)));
-        console.log("approved, depositing ", amount);
-        vm.prank(depositer);
         _vault.deposit(amount);
+        vm.stopPrank();
+    }
+
+    function depositAllVaults(uint256 _amount) public {
+        console.log("Depositing into vaults");
+        for(uint8 i = 0; i < assetFixtures.length; ++i) {   
+            AssetFixture memory _fixture = assetFixtures[i];
+            IERC20 _want = _fixture.want;
+            IVault _vault = _fixture.vault;
+            //need to change the _amount into equal amounts dependant on the want based on oracle of 1e8
+            uint256 toDeposit = _amount * 1e8 / (tokenPrices[_fixture.name] * (10 ** (18 - IERC20Extended(address(_want)).decimals())));
+        
+            deposit(_vault, user, address(_want), toDeposit);
+  
+            assertEq(_want.balanceOf(address(_vault)), toDeposit, "vault deposit failed");
+        }
+    }
+
+    function harvestTripod() public {
+        //Harvest the Tripod to harvest the providers
+        vm.prank(keeper);
+        tripod.harvest();
+        assertGt(tripod.balanceOfStake(), 0, "HarvestFailed");
+    }
+
+    function depositAllVaultsAndHarvest(uint256 _amount) public {
+        depositAllVaults(_amount);
+        skip(1);
+        harvestTripod();
+    }
+
+    function setProvidersHealthCheck(bool check) public {
+        for(uint8 i = 0; i < assetFixtures.length; ++i) {
+            vm.prank(gov);
+            assetFixtures[i].strategy.setDoHealthCheck(check);
+        }  
     }
 
     function _setTokenAddrs() internal {
