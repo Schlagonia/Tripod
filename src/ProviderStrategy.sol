@@ -59,7 +59,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
     function estimatedTotalAssets() public view override returns (uint256) {
         return
             want.balanceOf(address(this)) +
-            TripodAPI(tripod).estimatedTotalProviderAssets(address(this));
+                TripodAPI(tripod).estimatedTotalProviderAssets(address(this));
     }
 
     function totalDebt() public view returns (uint256) {
@@ -82,7 +82,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
         if (launchHarvest) {
             launchHarvest = false;
         }
-        // NOTE: this strategy is operated following epochs. These begin during adjustPosition and end during prepareReturn
+        // NOTE: Harvests are all done throught the joint/Tripod contract
         // The Joint will always close the position to realize profits then call harvest here 
 
         // After the positions are closed all funds are kept at the joint and can be pulled if needed
@@ -153,7 +153,6 @@ contract ProviderStrategy is BaseStrategyInitializable {
         if (wantBalance > 0) {
             want.safeTransfer(tripod, wantBalance);
         }
-
     }
 
     function liquidatePosition(uint256 _amountNeeded)

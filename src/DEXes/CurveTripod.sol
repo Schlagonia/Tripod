@@ -261,15 +261,19 @@ contract CurveTripod is NoHedgeTripod {
         uint256[] memory _amountPending = new uint256[](rewardTokens.length);
         console.log("Reward tokens length ", rewardTokens.length);
         //Save the earned CrV rewards to 0 where crv will be
-        _amountPending[0] = rewardsContract.earned(address(this));
-        //Just place 0 for convex, avoids complex math and underestimates rewards for safety
-        _amountPending[1] = 0;
+        _amountPending[0] = 
+            rewardsContract.earned(address(this)) + 
+                IERC20(crvToken).balanceOf(address(this));
+        //Just place current balance for convex, avoids complex math and underestimates rewards for safety
+        _amountPending[1] = IERC20(convexToken).balanceOf(address(this));
 
         //We skipped the first two of the rewards list
         for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
             address virtualRewardsPool = rewardsContract.extraRewards(i);
             //Spot 2 in our array will correspond with 0 in Convex's
-            _amountPending[i + 2] = IConvexRewards(virtualRewardsPool).earned(address(this));
+            _amountPending[i + 2] = 
+                IConvexRewards(virtualRewardsPool).earned(address(this)) + 
+                    IERC20(rewardTokens[i+2]).balanceOf(address(this));
         }
     }
 

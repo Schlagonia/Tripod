@@ -9,10 +9,6 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./interfaces/IERC20Extended.sol";
 
-import "./ySwapper.sol";
-
-import "forge-std/console.sol";
-
 import {VaultAPI} from "@yearnvaults/contracts/BaseStrategy.sol";
 
 interface ProviderStrategy {
@@ -233,9 +229,9 @@ abstract contract Tripod {
         // return true if we have balance of A B and C while the position is closed
         return
             (balanceOfA() > 0 && balanceOfB() > 0 && balanceOfC() > 0) &&
-            invested[tokenA] == 0 &&
+            (invested[tokenA] == 0 &&
             invested[tokenB] == 0 &&
-            invested[tokenC] == 0;
+            invested[tokenC] == 0);
     }
 
     /* @notice
@@ -245,7 +241,7 @@ abstract contract Tripod {
      */
     function setKeeper(address _keeper) 
         external 
-        onlyKeepers 
+        onlyVaultManagers 
     {
         keeper = _keeper;
     }
@@ -314,7 +310,7 @@ abstract contract Tripod {
 
     /*
     * @notice
-    *   Functions for the keepers to call
+    *   External Functions for the keepers to call
     *   Will exit all positions and sell all rewards applicable attempting to rebalance profits
     *   Will then call the harvest function on each Provider to avoid redundant harvests
     *   This only sends funds back if we will not be reinvesting funds
@@ -358,12 +354,13 @@ abstract contract Tripod {
 
         // 1. CLOSE LIQUIDITY POSITION
         // Closing the position will:
+        // - Withdraw from staking contract
         // - Remove liquidity from DEX
         // - Claim pending rewards
         // - Close Hedge and receive payoff
         _closePosition();
 
-        // 2. SELL REWARDS FOR WANT
+        // 2. SELL REWARDS FOR WANT's
         swapRewardTokens();
 
         // 3. REBALANCE PORTFOLIO
@@ -404,15 +401,15 @@ abstract contract Tripod {
      */
     function closeAllPositions() external onlyProviders {
         _closeAllPositions();
-        //This is only called during liquidateAllPositions after a strat or vault shutdown so we should not reinvest
+        //This is only called during liquidateAllPositions after a strat or vault is shutdown so we should not reinvest
         dontInvestWant = true;
     }
 	
     /*
      * @notice
-     *  Function available for providers to open the joint position:
+     *  Function called during harvests to open new position:
      * - open the LP position
-     * - open the hedginf position if necessary
+     * - open the hedge position if necessary
      * - deposit the LPs if necessary
      */
     function _openPosition() internal {
@@ -448,7 +445,7 @@ abstract contract Tripod {
     }
 
     function harvestTrigger(uint256 /*callCost*/) external view virtual returns (bool) {
-        return balanceOfRewardToken()[0] > minRewardToHarvest;
+        return balanceOfRewardToken()[0] > minRewardToHarvest || shouldStartEpoch();
     }
 
     /*
@@ -497,11 +494,11 @@ abstract contract Tripod {
             avgRatio = (ratioA + ratioB + ratioC) / 3;
         }
 
-        //If only one is higher than the average ratio, then ratio - avgRatio is split between the other two in relation to their diffs
+        //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
         //If two are higher than the average each has its diff traded to the third
         //We know all three cannot be above the avg
         //This flow allows us to keep track of exactly what tokens need to be swapped from and to 
-        //as well as how much with little extra memory used and a max of 3 if() checks
+        //as well as how much with little extra memory/storage used and a max of 3 if() checks
         if(ratioA > avgRatio) {
 
             if (ratioB > avgRatio) {
@@ -663,7 +660,6 @@ abstract contract Tripod {
         uint256[] memory _rewardsPending = pendingRewards();
         address[] memory _rewardTokens = rewardTokens;
         address reward;
-        console.log("Rewards beign accounted for");
         for (uint256 i = 0; i < _rewardsPending.length; i++) {
             reward = _rewardTokens[i];
             if (reward == tokenA) {
@@ -678,8 +674,9 @@ abstract contract Tripod {
                 uint256 outAmount = quote(
                     reward,
                     swapTo,
-                    _rewardsPending[i] + IERC20(reward).balanceOf(address(this))
+                    _rewardsPending[i]
                 );
+
                 if (swapTo == tokenA) { 
                     _aBalance += outAmount;
                 } else if (swapTo == tokenB) {
@@ -695,17 +692,18 @@ abstract contract Tripod {
     /*
     * @notice 
     *    This function is a fucking disaster.
-    *    But I think it wokks...
+    *    But it wokks...
     */
     function quoteRebalance(
         uint256 startingA,
         uint256 startingB,
         uint256 startingC
     ) internal view returns(uint256, uint256, uint256) {
+        //We cannot rebalance with a 0 starting position, should only be applicable if called when everything is 0 so just return
         if(invested[tokenA] == 0 || invested[tokenB] == 0 || invested[tokenC] == 0) {
             return (startingA, startingB, startingC);
         }
-        console.log("Quoting Rebalance");
+
         (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
                     startingA,
                     startingB,
@@ -721,7 +719,7 @@ abstract contract Tripod {
         unchecked{
             avgRatio = (ratioA + ratioB + ratioC) / 3;
         }
-        console.log("AVg Ratio ", avgRatio);
+        
         uint256 change0;
         uint256 change1;
         uint256 change2;
@@ -729,14 +727,12 @@ abstract contract Tripod {
         if(ratioA > avgRatio) {
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
-                console.log("quoting A and B to C");
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
                 return ((startingA - change0), 
                             (startingB - change1), 
                                 (startingC + change2));
             } else if (ratioC > avgRatio) {
-                console.log("quoting A and C to B");
                 //swapping A and C -> B
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
@@ -745,7 +741,6 @@ abstract contract Tripod {
                                 (startingC - change1));
             } else {
                 //Swapping A -> B and C
-                console.log("quoting A to B and C");
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC, ratioC);
                 return ((startingA - change0), 
@@ -755,7 +750,6 @@ abstract contract Tripod {
         } else if (ratioB > avgRatio) {
             //We know A is below avg so we just need to check C
             if (ratioC > avgRatio) {
-                console.log("quoting B and C to A");
                 //Swap B and C -> A
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
@@ -764,7 +758,6 @@ abstract contract Tripod {
                                 (startingC - change1));
             } else {
                 //swapping B -> C and A
-                console.log("quoting B to C and A");
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(avgRatio, tokenB, ratioB, tokenA, ratioA, tokenC, ratioC);
                 return ((startingA + change1), 
@@ -774,7 +767,6 @@ abstract contract Tripod {
         } else {
             //We know A and B are below so C has to be the only one above the avg
             //swap C -> A and B
-            console.log("Quoting C to A and B");
             (change0, change1, change2) = 
                 quoteSwapOneToTwo(avgRatio, tokenC, ratioC, tokenA, ratioA, tokenB, ratioB);
             return ((startingA + change1), 
@@ -868,7 +860,7 @@ abstract contract Tripod {
             toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
             toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
         }
-        console.log("ToSwapFrom 0", toSwapFrom0, " toSwapFrom1 ", toSwapFrom1);
+
         uint256 amountOut = quote(
             token0Address, 
             toTokenAddress, 
@@ -918,18 +910,21 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly estimating the balancing ratios for the 2 tokens in the form:
+     *  Function available publicly estimating the balancing ratios for the tokens in the form:
      * ratio = currentBalance / invested Balance
      * @param currentA, current balance of tokenA
      * @param currentB, current balance of tokenB
      * @param currentC, current balance of tokenC
-     * @return _a, _b _c, ratios for tokenA tokenB and tokenC
+     * @return _a, _b _c, ratios for tokenA tokenB and tokenC. Will return 0's if there is nothing invested
      */
     function getRatios(
         uint256 currentA,
         uint256 currentB,
         uint256 currentC
     ) public view returns (uint256 _a, uint256 _b, uint256 _c) {
+        if(invested[tokenA] == 0 || invested[tokenB] == 0 || invested[tokenC] == 0) {
+            return (0, 0, 0);
+        }
         unchecked {
             _a = (currentA * RATIO_PRECISION) / invested[tokenA];
             _b = (currentB * RATIO_PRECISION) / invested[tokenB];
@@ -1030,7 +1025,12 @@ abstract contract Tripod {
         // **WARNING**: This call is sandwichable, care should be taken
         //              to always execute with a private relay
         // We take care of mins in the harvest logic to assure we account for swaps
-        burnLP(balanceOfPool(), 0, 0, 0);
+        burnLP(
+            balanceOfPool(), 
+            0, 
+            0, 
+            0
+        );
 
         return (balanceOfA(), balanceOfB(), balanceOfC());
     }
@@ -1096,8 +1096,9 @@ abstract contract Tripod {
      */
     function balanceOfRewardToken() public view returns (uint256[] memory) {
         address[] memory _rewardTokens = rewardTokens;
-        uint256[] memory _balances = new uint256[](_rewardTokens.length);
-        for (uint8 i = 0; i < _rewardTokens.length; i++) {
+        uint256 length = _rewardTokens.length;
+        uint256[] memory _balances = new uint256[](length);
+        for (uint8 i = 0; i < length; i++) {
             _balances[i] = IERC20(_rewardTokens[i]).balanceOf(address(this));
         }
         return _balances;
@@ -1156,12 +1157,25 @@ abstract contract Tripod {
         uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
         withdrawLP(amount);
+        uint256 _a = balanceOfA();
+        uint256 _b = balanceOfB();
+        uint256 _c = balanceOfC();
         burnLP(
             amount,
             expectedBalanceA,
             expectedBalanceB,
             expectedBalanceC
         );
+
+        //Need to update the invested balances based on how much we pulled out
+        unchecked {
+            uint256 aDiff = balanceOfA() - _a;
+            uint256 bDiff = balanceOfB() - _b;
+            uint256 cDiff = balanceOfC() - _c;
+            invested[tokenA] = invested[tokenA] > aDiff ? invested[tokenA] - aDiff : 0;
+            invested[tokenB] = invested[tokenB] > bDiff ? invested[tokenB] - bDiff : 0;
+            invested[tokenC] = invested[tokenC] > cDiff ? invested[tokenC] - cDiff : 0;
+        }
     }
 
     function swapTokenForTokenManually(

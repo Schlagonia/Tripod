@@ -45,42 +45,6 @@ contract StrategyOperationsTest is StrategyFixture {
         assertRelApproxEq(_want.balanceOf(user), deposited[index], DELTA);
     }
 
-    function testProfitableHarvests(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        uint256[3] memory bps;
-        for(uint256 i; i < assetFixtures.length; i ++) {
-            bps[i] = assetFixtures[i].vault.pricePerShare();
-        }
-        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
-        skip(1);
-        //simulate earning yield
-        //skip(3 days);
-        deal(crv, address(tripod), _amount / 10);
-        setProvidersHealthCheck(false);
-        // Harvest 2: Realize profit
-        vm.prank(keeper);
-        tripod.harvest();
-        
-        skip(6 hours);
-
-        for(uint256 i; i < assetFixtures.length; i ++) {
-            AssetFixture memory fixture = assetFixtures[i];
-            IERC20 _want = fixture.want;
-            IVault _vault = fixture.vault;
-            ProviderStrategy _strategy = fixture.strategy;
-        
-            uint256 profit = _vault.strategies(address(_strategy)).totalGain;
-            console.log("Balance of vault ", _want.balanceOf(address(_vault)));
-            console.log("Profit recorded", profit);
-            console.log("Locked Profit ", _vault.lockedProfit());
-            console.log("Strat Debt ", _vault.strategies(address(_strategy)).totalDebt);
-            console.log("Deposited ", deposited[i]);
-            console.log("Total Supply ", _vault.totalSupply());
-            assertGt(profit, 0, "no profit");
-            assertGt(_vault.pricePerShare(), bps[i], "bad bps");
-        }
-    }
-
     function testChangeDebt(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         uint256[3] memory deposited =  depositAllVaultsAndHarvest(_amount);
@@ -112,6 +76,44 @@ contract StrategyOperationsTest is StrategyFixture {
         for(uint256 i; i < assetFixtures.length; i ++) {
             AssetFixture memory fixture = assetFixtures[i];
             assertRelApproxEq(fixture.strategy.estimatedTotalAssets(), deposited[i], DELTA);
+        }
+    }
+
+    function testProfitableHarvest(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+
+        uint256[3] memory bps;
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            bps[i] = assetFixtures[i].vault.pricePerShare();
+        }
+
+        depositAllVaultsAndHarvest(_amount);
+
+        skip(2 days);
+        //deal(crv, address(tripod), _amount/10);
+        //deal(cvx, address(tripod), _amount/10);
+        //setProvidersHealthCheck(false);
+        // Harvest 2: Realize profit
+        skip(1);
+        vm.prank(keeper);
+        tripod.harvest();
+
+        skip(6 hours);
+
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            IERC20 _want = fixture.want;
+            IVault _vault = fixture.vault;
+            ProviderStrategy _strategy = fixture.strategy;
+            //Make sure we have updated the debt and made a profit
+            uint256 vaultBalance = _want.balanceOf(address(_vault));
+            StrategyParams memory params = _vault.strategies(address(_strategy));
+            //Make sure we got back profit + half the deposit
+            assertEq(
+                params.totalGain, 
+                vaultBalance
+            );
+            assertGt(_vault.pricePerShare(), bps[i]);
         }
     }
     
