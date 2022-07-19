@@ -1,258 +1,251 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.12;
-import "forge-std/console.sol";
 
 import {StrategyFixture} from "./utils/StrategyFixture.sol";
+import "forge-std/console.sol";
+
+import {ProviderStrategy} from "../ProviderStrategy.sol";
+import {CurveTripod} from "../DEXes/CurveTripod.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IVault} from "../interfaces/Vault.sol";
 import {StrategyParams} from "../interfaces/Vault.sol";
 
 contract StrategyOperationsTest is StrategyFixture {
+    using SafeERC20 for IERC20;
     // setup is run on before each test
     function setUp() public override {
         // setup vault
         super.setUp();
     }
-/*
-    function testSetupVaultOK() public {
-        console.log("address of vault", address(vault));
-        assertTrue(address(0) != address(vault));
-        assertEq(vault.token(), address(want));
-        assertEq(vault.depositLimit(), type(uint256).max);
-    }
-
-    // TODO: add additional check on strat params
-    function testSetupStrategyOK() public {
-        console.log("address of strategy", address(strategy));
-        assertTrue(address(0) != address(strategy));
-        assertEq(address(strategy.vault()), address(vault));
-    }
 
     /// Test Operations
     function testStrategyOperation(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
-        uint256 balanceBefore = want.balanceOf(address(user));
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        assertRelApproxEq(want.balanceOf(address(vault)), _amount, DELTA);
+        skip(1 days);
 
-        skip(3 minutes);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
-
-        // tend
-        vm.prank(strategist);
-        strategy.tend();
-
-        vm.prank(user);
-        vault.withdraw();
-
-        assertRelApproxEq(want.balanceOf(user), balanceBefore, DELTA);
-    }
-
-    function testEmergencyExit(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
-
-        // Deposit to the vault
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
-
-        // set emergency and exit
         vm.prank(gov);
-        strategy.setEmergencyExit();
-        skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertLt(strategy.estimatedTotalAssets(), _amount);
+        tripod.setDontInvestWant(true);
+
+        vm.prank(keeper);
+        tripod.harvest();
+        //Pick a random Strategy to check
+        uint256 index = _amount % 3;
+        AssetFixture memory fixture = assetFixtures[index];
+        IERC20 _want = fixture.want;
+        IVault _vault = fixture.vault;
+        ProviderStrategy _strategy = fixture.strategy;
+
+        vm.prank(user);
+        _vault.withdraw();
+
+        assertRelApproxEq(_want.balanceOf(user), deposited[index], DELTA);
     }
 
-    function testProfitableHarvest(uint256 _amount) public {
+    function testProfitableHarvests(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
-
-        // Deposit to the vault
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        assertRelApproxEq(want.balanceOf(address(vault)), _amount, DELTA);
-
-        uint256 beforePps = vault.pricePerShare();
-
-        // Harvest 1: Send funds through the strategy
+        uint256[3] memory bps;
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            bps[i] = assetFixtures[i].vault.pricePerShare();
+        }
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
         skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
-
-        // TODO: Add some code before harvest #2 to simulate earning yield
-
+        //simulate earning yield
+        //skip(3 days);
+        deal(crv, address(tripod), _amount / 10);
+        setProvidersHealthCheck(false);
         // Harvest 2: Realize profit
-        skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
+        vm.prank(keeper);
+        tripod.harvest();
+        
         skip(6 hours);
 
-        // TODO: Uncomment the lines below
-        // uint256 profit = want.balanceOf(address(vault));
-        // assertGt(want.balanceOf(address(strategy)) + profit, _amount);
-        // assertGt(vault.pricePerShare(), beforePps)
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            IERC20 _want = fixture.want;
+            IVault _vault = fixture.vault;
+            ProviderStrategy _strategy = fixture.strategy;
+        
+            uint256 profit = _vault.strategies(address(_strategy)).totalGain;
+            console.log("Balance of vault ", _want.balanceOf(address(_vault)));
+            console.log("Profit recorded", profit);
+            console.log("Locked Profit ", _vault.lockedProfit());
+            console.log("Strat Debt ", _vault.strategies(address(_strategy)).totalDebt);
+            console.log("Deposited ", deposited[i]);
+            console.log("Total Supply ", _vault.totalSupply());
+            assertGt(profit, 0, "no profit");
+            assertGt(_vault.pricePerShare(), bps[i], "bad bps");
+        }
     }
 
     function testChangeDebt(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
+        uint256[3] memory deposited =  depositAllVaultsAndHarvest(_amount);
 
-        // Deposit to the vault and harvest
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        vm.prank(gov);
-        vault.updateStrategyDebtRatio(address(strategy), 5_000);
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            vm.prank(gov);
+            fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 5_000);
+        }
+
         skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        uint256 half = uint256(_amount / 2);
-        assertRelApproxEq(strategy.estimatedTotalAssets(), half, DELTA);
+        vm.prank(keeper);
+        tripod.harvest();
 
-        vm.prank(gov);
-        vault.updateStrategyDebtRatio(address(strategy), 10_000);
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            assertRelApproxEq(fixture.strategy.estimatedTotalAssets(), deposited[i] / 2, DELTA);
+        }
+        
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            vm.prank(gov);
+            fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 10_000);
+        }
         skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
+        vm.prank(keeper);
+        tripod.harvest();
 
-        // In order to pass these tests, you will need to implement prepareReturn.
-        // TODO: uncomment the following lines.
-        // vm.prank(gov);
-        // vault.updateStrategyDebtRatio(address(strategy), 5_000);
-        // skip(1);
-        // vm.prank(strategist);
-        // strategy.harvest();
-        // assertRelApproxEq(strategy.estimatedTotalAssets(), half, DELTA);
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            assertRelApproxEq(fixture.strategy.estimatedTotalAssets(), deposited[i], DELTA);
+        }
     }
-
+    
     function testProfitableHarvestOnDebtChange(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
 
-        // Deposit to the vault
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        assertRelApproxEq(want.balanceOf(address(vault)), _amount, DELTA);
+        uint256[3] memory bps;
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            bps[i] = assetFixtures[i].vault.pricePerShare();
+        }
 
-        uint256 beforePps = vault.pricePerShare();
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
-        // Harvest 1: Send funds through the strategy
-        skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-        assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            vm.prank(gov);
+            fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 5_000);
+        }
 
-        // TODO: Add some code before harvest #2 to simulate earning yield
+        deal(crv, address(tripod), _amount/10);
+        deal(cvx, address(tripod), _amount/10);
 
-        vm.prank(gov);
-        vault.updateStrategyDebtRatio(address(strategy), 5_000);
-
-        // In order to pass these tests, you will need to implement prepareReturn.
-        // TODO: uncomment the following lines.
-        
+        setProvidersHealthCheck(false);
         // Harvest 2: Realize profit
         skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
+        vm.prank(keeper);
+        tripod.harvest();
+
         //Make sure we have updated the debt ratio of the strategy
-        assertRelApproxEq(
-            strategy.estimatedTotalAssets(), 
-            _amount / 2, 
-            DELTA
-        );
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            assertRelApproxEq(
+                fixture.strategy.estimatedTotalAssets(), 
+                deposited[i] / 2, 
+                DELTA
+            );  
+        }
+
         skip(6 hours);
 
-        //Make sure we have updated the debt and made a profit
-        uint256 vaultBalance = want.balanceOf(address(vault));
-        StrategyParams memory params = vault.strategies(address(strategy));
-        //Make sure we got back profit + half the deposit
-        assertRelApproxEq(
-            _amount / 2 + params.totalGain, 
-            vaultBalance, 
-            DELTA
-        );
-        assertGe(vault.pricePerShare(), beforePps);
-        
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            IERC20 _want = fixture.want;
+            IVault _vault = fixture.vault;
+            ProviderStrategy _strategy = fixture.strategy;
+            //Make sure we have updated the debt and made a profit
+            uint256 vaultBalance = _want.balanceOf(address(_vault));
+            StrategyParams memory params = _vault.strategies(address(_strategy));
+            //Make sure we got back profit + half the deposit
+            assertRelApproxEq(
+                deposited[i] / 2 + params.totalGain, 
+                vaultBalance, 
+                DELTA
+            );
+            assertGt(_vault.pricePerShare(), bps[i]);
+        }
     }
 
     function testSweep(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
+        //depositAllVaultsAndHarvest(_amount);
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            IERC20 want = fixture.want;
+            IVault vault = fixture.vault;
+            ProviderStrategy strategy = fixture.strategy;
 
-        // Strategy want token doesn't work
-        vm.prank(user);
-        want.transfer(address(strategy), _amount);
-        assertEq(address(want), address(strategy.want()));
-        assertGt(want.balanceOf(address(strategy)), 0);
+            // Strategy want token doesn't work
+            deal(address(want), user, _amount);
+            vm.startPrank(user);
+            want.safeTransfer(address(strategy), _amount);
+            vm.stopPrank();
+            assertEq(address(want), address(strategy.want()));
+            assertGt(want.balanceOf(address(strategy)), 0);
+
+            vm.prank(gov);
+            vm.expectRevert("!want");
+            strategy.sweep(address(want));
+
+            // Vault share token doesn't work
+            vm.prank(gov);
+            vm.expectRevert("!shares");
+            strategy.sweep(address(vault));
+
+            IERC20 toSweep = IERC20(tokenAddrs["LINK"]);
+            uint256 beforeBalance = toSweep.balanceOf(gov);
+            uint256 amount = 1 ether;
+            deal(address(toSweep), user, amount);
+            vm.prank(user);
+            toSweep.transfer(address(strategy), amount);
+            assertNeq(address(toSweep), address(strategy.want()));
+            assertEq(toSweep.balanceOf(user), 0);
+            vm.prank(gov);
+            strategy.sweep(address(toSweep));
+            assertRelApproxEq(
+                toSweep.balanceOf(gov),
+                amount + beforeBalance,
+                DELTA
+            );
+        }
+    } 
+
+    function testTripodSweep(uint256 _amount) public  {
+        for(uint256 i; i < assetFixtures.length; i ++) {
+            AssetFixture memory fixture = assetFixtures[i];
+            IERC20 want = fixture.want;
+
+            deal(address(want), address(tripod), _amount);
+        }
+
+        vm.startPrank(gov);
+        vm.expectRevert(bytes("TokenA"));
+        tripod.sweep(address(assetFixtures[0].want));
+        vm.expectRevert(bytes("TokenB"));
+        tripod.sweep(address(assetFixtures[1].want));
+        vm.expectRevert(bytes("TokenC"));
+        tripod.sweep(address(assetFixtures[2].want));
+        vm.stopPrank();
+
+        IERC20 toSweep = IERC20(tokenAddrs["LINK"]);
+        uint256 beforeBalance = toSweep.balanceOf(gov);
+        uint256 amount = 1 ether;
+        deal(address(toSweep), address(tripod), amount);
+
+        assertEq(toSweep.balanceOf(user), 0);
+        vm.expectRevert(bytes("!authorized"));
+        tripod.sweep(address(toSweep));
 
         vm.prank(gov);
-        vm.expectRevert("!want");
-        strategy.sweep(address(want));
-
-        // Vault share token doesn't work
-        vm.prank(gov);
-        vm.expectRevert("!shares");
-        strategy.sweep(address(vault));
-
-        // TODO: If you add protected tokens to the strategy.
-        // Protected token doesn't work
-        // vm.prank(gov);
-        // vm.expectRevert("!protected");
-        // strategy.sweep(strategy.protectedToken());
-
-        uint256 beforeBalance = weth.balanceOf(gov);
-        uint256 wethAmount = 1 ether;
-        deal(address(weth), user, wethAmount);
-        vm.prank(user);
-        weth.transfer(address(strategy), wethAmount);
-        assertNeq(address(weth), address(strategy.want()));
-        assertEq(weth.balanceOf(user), 0);
-        vm.prank(gov);
-        strategy.sweep(address(weth));
+        tripod.sweep(address(toSweep));
         assertRelApproxEq(
-            weth.balanceOf(gov),
-            wethAmount + beforeBalance,
+            toSweep.balanceOf(gov),
+            amount + beforeBalance,
             DELTA
         );
     }
-
-    function testTriggers(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        deal(address(want), user, _amount);
-
-        // Deposit to the vault and harvest
-        vm.prank(user);
-        want.approve(address(vault), _amount);
-        vm.prank(user);
-        vault.deposit(_amount);
-        vm.prank(gov);
-        vault.updateStrategyDebtRatio(address(strategy), 5_000);
-        skip(1);
-        vm.prank(strategist);
-        strategy.harvest();
-
-        strategy.harvestTrigger(0);
-        strategy.tendTrigger(0);
-    }
-    */
 }

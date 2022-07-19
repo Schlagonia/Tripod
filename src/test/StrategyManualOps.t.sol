@@ -15,32 +15,6 @@ contract ManualOpsTest is StrategyFixture {
         super.setUp();
     }
 
-    function testManualLpBurn(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
-
-        assertGt(tripod.balanceOfStake(), 0);
-
-        skip(7 hours);
-
-        uint256 lpBalance = tripod.totalLpBalance(); 
-        (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
-        vm.prank(gov);
-        tripod.burnLPManually(
-            lpBalance/ 2,
-            (_a /2) * 9_900 / 10_000,
-            (_b / 2) * 9_900 / 10_000,
-            (_c / 2) * 9_900 / 10_000
-        );
-        
-
-        assertEq(tripod.balanceOfPool(), 0, "balance of pool off");
-        assertRelApproxEq(tripod.balanceOfStake(), lpBalance / 2, DELTA);
-        assertGt(tripod.balanceOfA(), 0, "A balance");
-        assertGt(tripod.balanceOfC(), 0, "c balance");
-        assertGt(tripod.balanceOfB(), 0, "b balance");
-    }
-
     function testManuallClosePosition(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
@@ -62,6 +36,51 @@ contract ManualOpsTest is StrategyFixture {
         assertGt(tripod.balanceOfA(), 0, "A balance is 0");
         assertGt(tripod.balanceOfC(), 0, "C balance is 0");
         assertGt(tripod.balanceOfB(), 0, "B balance is 0");
+    }
+
+    function testManualLiquidate(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        depositAllVaultsAndHarvest(_amount);
+
+        assertGt(tripod.balanceOfStake(), 0);
+
+        skip(7 hours);
+
+        uint256 lpBalance = tripod.totalLpBalance(); 
+        (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
+        vm.prank(gov);
+        tripod.removeLiquidityManually(
+            lpBalance/ 2,
+            (_a /2) * 9_900 / 10_000,
+            (_b / 2) * 9_900 / 10_000,
+            (_c / 2) * 9_900 / 10_000
+        );
+
+        assertEq(tripod.balanceOfPool(), 0, "balance of pool off");
+        assertRelApproxEq(tripod.balanceOfStake(), lpBalance / 2, DELTA);
+        assertGt(tripod.balanceOfA(), 0, "A balance");
+        assertGt(tripod.balanceOfC(), 0, "c balance");
+        assertGt(tripod.balanceOfB(), 0, "b balance");
+    }
+
+    function testManualLiquidateFail(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        depositAllVaultsAndHarvest(_amount);
+
+        assertGt(tripod.balanceOfStake(), 0);
+
+        skip(7 hours);
+
+        uint256 lpBalance = tripod.totalLpBalance(); 
+        (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
+        vm.prank(gov);
+        vm.expectRevert();
+        tripod.removeLiquidityManually(
+            lpBalance/ 2,
+            (_a /2) * 11_000 / 10_000,
+            (_b / 2) * 11_000 / 10_000,
+            (_c / 2) * 11_000 / 10_000
+        );
     }
 
     function testManualRewardSell(uint256 _amount) public {

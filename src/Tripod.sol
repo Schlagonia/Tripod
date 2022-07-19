@@ -27,6 +27,8 @@ interface ProviderStrategy {
     function totalDebt() external view returns (uint256);
 
     function harvest() external;
+
+    function launchHarvest() external view returns (bool);
 }
 
 abstract contract Tripod {
@@ -191,7 +193,7 @@ abstract contract Tripod {
         IERC20(tokenB).safeApprove(_providerB, type(uint256).max);
         IERC20(tokenC).safeApprove(_providerC, type(uint256).max);
 
-        //Check if we are using the reference token for easier swaps for rewards
+        //Check if we are using the reference token for easier swaps from rewards
         if (tokenA == referenceToken || tokenB == referenceToken || tokenC == referenceToken) {
             usingReference = true;
         } else {
@@ -201,7 +203,7 @@ abstract contract Tripod {
 
     function name() external view virtual returns (string memory);
 
-    function shouldEndEpoch() external view virtual returns (bool);
+    function shouldEndEpoch() public view virtual returns (bool);
 
     function _autoProtect() internal view virtual returns (bool);
 
@@ -227,7 +229,7 @@ abstract contract Tripod {
      * - if there is balance of tokens but no position open, return true
      * @return wether to start a new epoch or not
      */
-    function shouldStartEpoch() external view returns (bool) {
+    function shouldStartEpoch() public view returns (bool) {
         // return true if we have balance of A B and C while the position is closed
         return
             (balanceOfA() > 0 && balanceOfB() > 0 && balanceOfC() > 0) &&
@@ -395,7 +397,7 @@ abstract contract Tripod {
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
     }
 
-        /*
+    /*
      * @notice
      *  Function available for providers to close the joint position and can then pull funds back
      * provider strategy
@@ -937,13 +939,18 @@ abstract contract Tripod {
 
     function createLP() internal virtual returns (uint256, uint256, uint256);
 
-    function burnLP(uint256 amount) internal virtual;
+    function burnLP(
+        uint256 amount, 
+        uint256 minAOut, 
+        uint256 minBOut, 
+        uint256 minCOut
+    ) internal virtual;
 
     function getReward() internal virtual;
 
     function depositLP() internal virtual {}
 
-    function withdrawLP() internal virtual {}
+    function withdrawLP(uint256 amount) internal virtual {}
 
     /*
      * @notice
@@ -1011,7 +1018,7 @@ abstract contract Tripod {
      */
     function _closePosition() internal returns (uint256, uint256, uint256) {
         // Unstake LP from staking contract
-        withdrawLP();
+        withdrawLP(balanceOfStake());
 
         // Close the hedge
         closeHedge();
@@ -1022,7 +1029,8 @@ abstract contract Tripod {
 
         // **WARNING**: This call is sandwichable, care should be taken
         //              to always execute with a private relay
-        burnLP(balanceOfPool());
+        // We take care of mins in the harvest logic to assure we account for swaps
+        burnLP(balanceOfPool(), 0, 0, 0);
 
         return (balanceOfA(), balanceOfB(), balanceOfC());
     }
@@ -1109,6 +1117,8 @@ abstract contract Tripod {
     /*
      * @notice
      *  Function available to vault managers closing the joint position manually
+     *  This may not work when pool is not equally balanced. In those cases different manual function
+     *  should be implemented in children for specific strategies or use removeLiquidityManually to just burn LP token
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
      * @param expectedBalanceC, expected balance of tokenC to receive
@@ -1145,10 +1155,13 @@ abstract contract Tripod {
         uint256 expectedBalanceB,
         uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
-        burnLP(amount);
-        require(expectedBalanceA <= balanceOfA(), "!sandwiched");
-        require(expectedBalanceB <= balanceOfB(), "!sandwiched");
-        require(expectedBalanceC <= balanceOfC(), "!sandwiched");
+        withdrawLP(amount);
+        burnLP(
+            amount,
+            expectedBalanceA,
+            expectedBalanceB,
+            expectedBalanceC
+        );
     }
 
     function swapTokenForTokenManually(

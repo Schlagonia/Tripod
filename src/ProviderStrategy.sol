@@ -127,16 +127,15 @@ contract ProviderStrategy is BaseStrategyInitializable {
         }
     }
 
+    //Providers should only be harvested directly if we have set Emergency exit == true
+    //Otherwise we should alwasys harvest providers through the Tripod
     function harvestTrigger(uint256 /*callCost*/)
         public
         view
         override
         returns (bool)
     {
-        // Delegating decision to joint
-        return
-            (TripodAPI(tripod).shouldStartEpoch() && balanceOfWant() > 0) ||
-            TripodAPI(tripod).shouldEndEpoch() || launchHarvest;
+        return emergencyExit;
     }
 
     function dontInvestWant() public view returns (bool) {

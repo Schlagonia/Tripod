@@ -237,8 +237,9 @@ contract StrategyFixture is ExtendedTest {
         vm.stopPrank();
     }
 
-    function depositAllVaults(uint256 _amount) public {
+    function depositAllVaults(uint256 _amount) public returns(uint256[3] memory deposited) {
         console.log("Depositing into vaults");
+        
         for(uint8 i = 0; i < assetFixtures.length; ++i) {   
             AssetFixture memory _fixture = assetFixtures[i];
             IERC20 _want = _fixture.want;
@@ -247,9 +248,10 @@ contract StrategyFixture is ExtendedTest {
             uint256 toDeposit = _amount * 1e8 / (tokenPrices[_fixture.name] * (10 ** (18 - IERC20Extended(address(_want)).decimals())));
         
             deposit(_vault, user, address(_want), toDeposit);
-  
+            deposited[i] = toDeposit;
             assertEq(_want.balanceOf(address(_vault)), toDeposit, "vault deposit failed");
         }
+
     }
 
     function harvestTripod() public {
@@ -259,8 +261,8 @@ contract StrategyFixture is ExtendedTest {
         assertGt(tripod.balanceOfStake(), 0, "HarvestFailed");
     }
 
-    function depositAllVaultsAndHarvest(uint256 _amount) public {
-        depositAllVaults(_amount);
+    function depositAllVaultsAndHarvest(uint256 _amount) public returns(uint256[3] memory deposited) {
+        deposited = depositAllVaults(_amount);
         skip(1);
         harvestTripod();
     }

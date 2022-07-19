@@ -319,9 +319,17 @@ contract CurveTripod is NoHedgeTripod {
      *  
      * @param amount, amount of liquidity to burn
      */
-    function burnLP(uint256 _amount) internal override {
+    function burnLP(
+        uint256 _amount,
+        uint256 minAOut, 
+        uint256 minBOut, 
+        uint256 minCOut
+    ) internal override {
 
         uint256[3] memory amounts;
+        amounts[index[tokenA]] = minAOut;
+        amounts[index[tokenB]] = minBOut;
+        amounts[index[tokenC]] = minCOut;
 
         ICurveFi(pool).remove_liquidity(
             _amount, 
@@ -346,35 +354,12 @@ contract CurveTripod is NoHedgeTripod {
     *   Internal function to unstake tokens from Convex
     *   harvesExtras will determine if we claim rewards, normally should be true
     */
-    function withdrawLP() internal override {
+    function withdrawLP(uint256 amount) internal override {
         
         rewardsContract.withdrawAndUnwrap(
-            rewardsContract.balanceOf(address(this)), 
+            amount, 
             harvestExtras
         );
-    }
-
-    /*
-     * @notice
-     *  Function available to vault managers to burn the LP manually,
-     *  Will first unstake the amount specified, may need to adjust harvestExtras first
-     * @param _amount, amount of liquidity to burn
-     * @param _minOutTokenA, Min of A we should have after
-     * @param _minOuttokenB, min of B we should have after
-     * @param _minOutTokenC, min of C we should have after
-     */
-    function burnLPManually(
-            uint256 _amount,
-            uint256 _minOutTokenA,
-            uint256 _minOutTokenB,
-            uint256 _minOutTokenC
-    ) external onlyVaultManagers {
-        rewardsContract.withdrawAndUnwrap(_amount, harvestExtras);
-        burnLP(_amount);   ///This should be implemented manually in amounts - currentBalance
-        require(balanceOfA() >= _minOutTokenA && 
-                balanceOfB() >= _minOutTokenB &&
-                balanceOfC() >= _minOutTokenC,
-                "Not enough out");
     }
 
     //To swap out of the reward tokens
@@ -429,6 +414,8 @@ contract CurveTripod is NoHedgeTripod {
         uint256 _amountIn, 
         uint256 _minOut
     ) internal returns (uint256) {
+        if(_amountIn < minAmountToSell) return 0;
+        
         // Do NOT use Crv pool
         IUniswapV2Router02 _router = IUniswapV2Router02(router);
 
@@ -554,12 +541,8 @@ contract CurveTripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Function used internally to retrieve the CRV index for a token in a CRV pool, for example
-     * 3Pool uses:
-     * - 0 is DAI
-     * - 1 is USDC
-     * - 2 is USDT
-     * @return in128 containing the token's pool index
+     *  Function used internally to retrieve the CRV index for a token in a CRV pool
+     * @return the token's pool index
      */
     function _getCRVPoolIndex(address _token) internal view returns(uint256) {
         uint256 i = 0;
@@ -628,26 +611,30 @@ contract CurveTripod is NoHedgeTripod {
      * @param callCost, call cost parameter
      * @return bool amount assessing whether to harvest or not
      */
-    function harvestTrigger(uint256 callCost) external view override returns (bool) {
-
-        uint256 _minRewardToHarvest = minRewardToHarvest;
-        if (_minRewardToHarvest == 0) {
-            return false;
-        }
+    function harvestTrigger(uint256 /*callCost*/) external view override returns (bool) {
 
         // check if the base fee gas price is higher than we allow. if it is, block harvests.
         if (!isBaseFeeAcceptable()) {
             return false;
         }
 
-        uint256[] memory _pendingRewards = pendingRewards();
-
-        if (_pendingRewards[0] >= _minRewardToHarvest * (10**IERC20Extended(rewardTokens[0]).decimals()) / RATIO_PRECISION && 
-            _pendingRewards[1] >= _minRewardToHarvest * (10**IERC20Extended(rewardTokens[1]).decimals()) / RATIO_PRECISION
-        ) {
+        if (dontInvestWant) {
             return true;
         }
 
+        if (shouldStartEpoch()) {
+            return true;
+        }
+        
+        if (shouldEndEpoch()) {
+            return true;
+        }
+
+        if(providerA.launchHarvest() || providerB.launchHarvest() || providerC.launchHarvest()) {
+            return true;
+        }
+
+        return false;
     }
 
     /*
@@ -658,27 +645,57 @@ contract CurveTripod is NoHedgeTripod {
      * to each provider
      * @return bool amount assessing whether to end the epoch or not
      */
-    function shouldEndEpoch() external view override returns (bool) {
+    function shouldEndEpoch() public view override returns (bool) {
         
     }
 
     /*
-     * @notice
-     *  Function used by keepers to compound the generated feed into the existing position
-     * in the joint. There may be some funds not used in the position and left idle in the 
-     * joint
-     */
+    * @notice 
+    *  To be called inbetween harvests if applicable
+    *  This will claim and sell rewards and create an LP with all available funds
+    */
     function tend() external override onlyKeepers {
+        //Claim all outstanding rewards
         getReward();
+        //Swap out of all Reward Tokens
+        swapRewardTokens();
+        //Create LP tokens
+        (uint256 aDeposited, uint256 bDeposited, uint256 cDeposited) = createLP();
+        //Stake LP tokens
+        depositLP();
+        //add to invested Amounts
+        unchecked {
+            invested[tokenA] += aDeposited;
+            invested[tokenB] += bDeposited;
+            invested[tokenC] += cDeposited;
+        }
     }
 
     /*
     * @notice
     *   Trigger to tell Keepers if they should call tend()
-    *   Can be implemented with an overRide if applicable
     */
     function tendTrigger(uint256 /*callCost*/) external view override returns (bool) {
-        return false;
+
+        uint256 _minRewardToHarvest = minRewardToHarvest;
+        if (_minRewardToHarvest == 0) {
+            return false;
+        }
+
+        if (totalLpBalance() == 0) {
+            return false;
+        }
+
+        // check if the base fee gas price is higher than we allow. if it is, block harvests.
+        if (!isBaseFeeAcceptable()) {
+            return false;
+        }
+
+        if (rewardsContract.earned(address(this)) + IERC20(crvToken).balanceOf(address(this)) >= 
+            _minRewardToHarvest * (10**IERC20Extended(crvToken).decimals()) / RATIO_PRECISION
+        ) {
+            return true;
+        }
     }
 
         /*
@@ -693,15 +710,11 @@ contract CurveTripod is NoHedgeTripod {
         view
         returns (address[] memory _path)
     {   
-        address _tokenA = tokenA;
-        address _tokenB = tokenB;
         bool isReferenceToken = _token_in == address(referenceToken) ||
             _token_out == address(referenceToken);
-        bool is_internal = (_token_in == _tokenA && _token_out == _tokenB) ||
-            (_token_in == _tokenB && _token_out == _tokenA);
-        _path = new address[](isReferenceToken || is_internal ? 2 : 3);
+        _path = new address[](isReferenceToken ? 2 : 3);
         _path[0] = _token_in;
-        if (isReferenceToken || is_internal) {
+        if (isReferenceToken) {
             _path[1] = _token_out;
         } else {
             _path[1] = address(referenceToken);

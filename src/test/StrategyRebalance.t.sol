@@ -60,13 +60,14 @@ contract RebalanceTest is StrategyFixture {
 
         skip(1);
 
-        vm.prank(gov);
-        tripod.burnLPManually(
+        vm.startPrank(gov);
+        tripod.removeLiquidityManually(
             tripod.totalLpBalance() / 10,
             0,
             0,
             0
         );
+        vm.stopPrank();
 
         vm.prank(address(tripod));
         assetFixtures[0].want.transfer(address(0), tripod.balanceOfA());
@@ -88,6 +89,18 @@ contract RebalanceTest is StrategyFixture {
 
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
+    }
+    
+    function testUnevenRebalance(uint256 _amount) public {
+        
+    }
+
+    function testQuoteRebalance(uint256 _amount) public {
+
+    }
+
+    function testQuoteUnevenRebalance(uint256 _amount) public  {
+
     }
 
 }
