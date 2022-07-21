@@ -71,4 +71,5 @@ contract TripodSetupTest is StrategyFixture {
         assertRelApproxEq(providerC.estimatedTotalAssets(), tripod.invested(address(providerC.want())) + tripod.balanceOfC(), DELTA);
 
     }
+
 }

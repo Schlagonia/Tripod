@@ -21,7 +21,8 @@ contract StrategyMigrationTest is StrategyFixture {
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
             address(weth),
-            pool
+            pool,
+            rewardsContract
         );
 
         CurveTripod _newTripod = CurveTripod(newTripod);
@@ -36,7 +37,8 @@ contract StrategyMigrationTest is StrategyFixture {
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
             address(weth),
-            pool
+            pool,
+            rewardsContract
         );
 
         vm.expectRevert(bytes("Joint already initialized"));
@@ -46,7 +48,8 @@ contract StrategyMigrationTest is StrategyFixture {
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
             address(weth),
-            pool
+            pool,
+            rewardsContract
         );
     }
 

@@ -2,8 +2,6 @@
 pragma solidity ^0.8.12;
 pragma experimental ABIEncoderV2;
 
-import "forge-std/console.sol";
-
 // Import necessary libraries and interfaces:
 // NoHedgeJoint to inherit from
 import "../Hedges/NoHedgeTripod.sol";
@@ -28,27 +26,33 @@ contract CurveTripod is NoHedgeTripod {
     // Used for cloning, will automatically be set to false for other clones
     bool public isOriginal = true;
     // boolean variable deciding wether to swap in uni or use CRV for provider tokens
-    // this can make sense if the pool is unbalanced and price is far from CRV or if the 
+    // this can make sense if the pool is unbalanced and price is far from UNI or if the 
     // liquidity remaining in the pool is not enough for the rebalancing swap the strategy needs
     bool public useUniRouter;
-    //Router to use in case of useUnirouter = true
+    //Router to use for reward swaps and in case of useUnirouter = true
     address public router;
 
     //The token the Curve pool mints for LP deposits
     address public poolToken;
+    //Index mapping provider token to its crv index 
     mapping (address => uint256) private index;
 
     //Convex contracts for staking and rewwards
     IConvexDeposit public constant depositContract = 
         IConvexDeposit(0xF403C135812408BFbE8713b5A23a04b3D48AAE31);
-    IConvexRewards public constant rewardsContract =
-        IConvexRewards(0x9D5C5E364D81DaB193b72db9E9BE9D8ee669B652);
-    address private constant convexToken = 
+    //Specific for each LP token
+    IConvexRewards public rewardsContract;
+    
+    // this is unique to each pool
+    uint256 public pid; 
+    //If we chould claim extras on harvests
+    bool public harvestExtras = true; 
+
+    //Base Reward Tokens
+    address internal constant convexToken = 
         address(0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B);
-    address private constant crvToken =
+    address internal constant crvToken =
         address(0xD533a949740bb3306d119CC777fa900bA034cd52);
-    uint256 public pid; // this is unique to each pool
-    bool public harvestExtras = true; //If we chould claim extras on harvests
 
     /*
      * @notice
@@ -58,15 +62,17 @@ contract CurveTripod is NoHedgeTripod {
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, Uni V3 pool to LP
+     * @param _rewardsContract The Convex rewards contract specific to this LP token
      */
     constructor(
         address _providerA,
         address _providerB,
         address _providerC,
         address _referenceToken,
-        address _pool
+        address _pool,
+        address _rewardsContract
     ) NoHedgeTripod(_providerA, _providerB, _providerC, _referenceToken, _pool) {
-        _initializeCurveTripod();
+        _initializeCurveTripod(_rewardsContract);
     }
 
     /*
@@ -77,37 +83,41 @@ contract CurveTripod is NoHedgeTripod {
 	 * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, Uni V3 pool to LP
+     * @param _rewardsContract The Convex rewards contract specific to this LP token
      */
     function initialize(
         address _providerA,
         address _providerB,
         address _providerC,
         address _referenceToken,
-        address _pool
+        address _pool,
+        address _rewardsContract
     ) external {
         _initialize(_providerA, _providerB, _providerC, _referenceToken, _pool);
-        _initializeCurveTripod();
+        _initializeCurveTripod(_rewardsContract);
     }
 
     /*
      * @notice
      *  Initialize CurveTtripod specifics
+     * @param _rewardsContract, The Convex rewards contract specific to this LP token
      */
-    function _initializeCurveTripod() internal {
+    function _initializeCurveTripod(address _rewardsContract) internal {
+        rewardsContract = IConvexRewards(_rewardsContract);
         //Get the token we will be using
         poolToken = ICurveFi(pool).token();
+        //UPdate the PID for the rewards pool
         pid = rewardsContract.pid();
+
         // The reward tokens are the tokens provided to the pool
         //This will update them based on current rewards on convex
         updateRewardTokens();
 
         //Use _getCrvPoolIndex to set mappings of index's
-        index[tokenA] = _getCRVPoolIndex(tokenA);
+        index[tokenA] = _getCRVPoolIndex(tokenA); 
         index[tokenB] = _getCRVPoolIndex(tokenB);
         index[tokenC] = _getCRVPoolIndex(tokenC);
 
-        // by default use crv pool to swap
-        useUniRouter = false;
         // Use sushi router due to higher liquidity for CVX
         router = address(0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F);
 
@@ -128,6 +138,7 @@ contract CurveTripod is NoHedgeTripod {
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, Uni V3 pool to LP
+     * @param _rewardsContract The Convex rewards contract specific to this LP token
      * @return newJoint, address of newly deployed joint
      */
     function cloneCurveTripod(
@@ -135,7 +146,8 @@ contract CurveTripod is NoHedgeTripod {
         address _providerB,
         address _providerC,
         address _referenceToken,
-        address _pool
+        address _pool,
+        address _rewardsContract
     ) external returns (address newJoint) {
         require(isOriginal, "!original");
         bytes20 addressBytes = bytes20(address(this));
@@ -160,7 +172,8 @@ contract CurveTripod is NoHedgeTripod {
             _providerB,
             _providerC,
             _referenceToken,
-            _pool
+            _pool,
+            _rewardsContract
         );
 
         emit Cloned(newJoint);
@@ -172,7 +185,13 @@ contract CurveTripod is NoHedgeTripod {
      * @return name of the strategy
      */
     function name() external view override returns (string memory) {
-        return string(abi.encodePacked("TriCryptoJointNoHedge"));
+        string memory symbol = string(
+            abi.encodePacked(
+                IERC20Extended(poolToken).symbol()
+            )
+        );
+
+        return string(abi.encodePacked("NoHedgeCurveTripod(", symbol, ")"));
     }
 
     /*
@@ -185,10 +204,10 @@ contract CurveTripod is NoHedgeTripod {
         useUniRouter = _useUniRouter;
     }
 
-    function updateRewardTokens() internal returns(address[] memory tokens) {
+    function updateRewardTokens() internal {
         delete rewardTokens; //empty the rewardsTokens and rebuild
 
-        //We know we will be getting convex and curve at least
+        //We know we will be getting curve and convex at least
         rewardTokens.push(crvToken);
         rewardTokens.push(convexToken);
 
@@ -211,6 +230,10 @@ contract CurveTripod is NoHedgeTripod {
         return IERC20(poolToken).balanceOf(address(this));
     }
 
+    /*
+    * @notice will return the total staked balance
+    *   Staked tokens in convex are treated 1 for 1 with lp tokens
+    */
     function balanceOfStake() public view override returns (uint256) {
         return rewardsContract.balanceOf(address(this));
     }
@@ -223,11 +246,11 @@ contract CurveTripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Function returning the current balance of each token in the LP position taking
-     * the new level of reserves into account
+     *  Function returning the current balance of each token in the LP position
+     *  This will assume tokens were deposited equally, the quoteRebalance will adjust after if that is not correct
      * @return _balanceA, balance of tokenA in the LP position
      * @return _balanceB, balance of tokenB in the LP position
-     * @return _balanceC, balance of tokenC in LP position
+     * @return _balanceC, balance of tokenC in the LP position
      */
     function balanceOfTokensInLP()
         public
@@ -235,8 +258,6 @@ contract CurveTripod is NoHedgeTripod {
         override
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
-        //User the VP to get dollar value then oracles to adjust;
-        //Could use actual pool values, but that could be manipulated
         uint256 lpBalance = totalLpBalance();
         if(lpBalance == 0) return (0, 0, 0);
 
@@ -246,20 +267,17 @@ contract CurveTripod is NoHedgeTripod {
         _balanceA = _pool.calc_withdraw_one_coin(third, index[tokenA]);
         _balanceB = _pool.calc_withdraw_one_coin(third, index[tokenB]);
         _balanceC = _pool.calc_withdraw_one_coin(third, index[tokenC]);
-        console.log("Expected A balance ", _balanceA);
-        console.log("Expected B balance ", _balanceB);
-        console.log("Expected C balance ", _balanceC);
     }
 
     /*
      * @notice
-     *  Function returning the amount of rewards earned until now - unclaimed
-     * @return uint256 array of tokenA and tokenB earned as rewards
+     *  Function returning the amount of rewards earned until now
+     * @return uint256 array of amounts of expected rewards earned
      */
     function pendingRewards() public view override returns (uint256[] memory) {
         // Initialize the array to same length as reward tokens
         uint256[] memory _amountPending = new uint256[](rewardTokens.length);
-        console.log("Reward tokens length ", rewardTokens.length);
+
         //Save the earned CrV rewards to 0 where crv will be
         _amountPending[0] = 
             rewardsContract.earned(address(this)) + 
@@ -366,42 +384,6 @@ contract CurveTripod is NoHedgeTripod {
         );
     }
 
-    //To swap out of the reward tokens
-    function swapRewardTokens() internal override {
-        address _tokenA = tokenA;
-        address _tokenB = tokenB;
-        address _tokenC = tokenC;
-        address[] memory _rewardTokens = rewardTokens;
-        for (uint256 i = 0; i < _rewardTokens.length; i++) {
-            address reward = _rewardTokens[i];
-            uint256 _rewardBal = IERC20(reward).balanceOf(address(this));
-            // If the reward token is either A B or C, don't swap
-            if (reward == _tokenA || reward == _tokenB || reward == _tokenC || _rewardBal == 0) {
-                continue;
-            // If the referenceToken is either A B or C, swap rewards against it 
-            } else if (usingReference) {
-                    swapReward(reward, referenceToken, _rewardBal, 0); 
-            } else {
-                // Assume that position has already been liquidated
-                //Instead this should just return the token with the lowest ratio
-                (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
-                    balanceOfA(),
-                    balanceOfB(),
-                    balanceOfC()
-                );
-       
-                //If everything is equal use A   
-                if(ratioA <= ratioB && ratioA <= ratioC) {
-                    swapReward(reward, _tokenA, _rewardBal, 0);
-                } else if(ratioB <= ratioC) {
-                    swapReward(reward, _tokenB, _rewardBal, 0);
-                } else {
-                    swapReward(reward, _tokenC, _rewardBal, 0);
-                }
-            }
-        }
-    }
-
     /*
     * @notice
     *   Internal function to swap the reward tokens into one of the provider tokens
@@ -417,7 +399,7 @@ contract CurveTripod is NoHedgeTripod {
         address _to, 
         uint256 _amountIn, 
         uint256 _minOut
-    ) internal returns (uint256) {
+    ) internal override returns (uint256) {
         if(_amountIn < minAmountToSell) return 0;
         
         // Do NOT use Crv pool
@@ -476,13 +458,10 @@ contract CurveTripod is NoHedgeTripod {
                 address(this),
                 block.timestamp
             );
-            return IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
 
         } else {
             ICurveFi _pool = ICurveFi(pool);
         
-            // Allow necessary amount for CRV pool
-            _checkAllowance(pool, IERC20(_tokenFrom), _amountIn);
             // Perform swap
             _pool.exchange(
                 index[_tokenFrom], 
@@ -490,15 +469,16 @@ contract CurveTripod is NoHedgeTripod {
                 _amountIn, 
                 _minOutAmount
             );
-            return IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
         }
+
+        return IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
     }
 
     /*
      * @notice
      *  Function used internally to quote a potential rebalancing swap without actually 
-     * executing it. Same as the swap function, will simulate the trade either on the uni v3
-     * pool or CRV pool based on useCRVPool
+     * executing it. Same as the swap function, will simulate the trade either on the uni
+     * pool or CRV pool based on useUniRouter as well as the tokens being swapped
      * @param _tokenFrom, adress of token to swap from
      * @param _tokenTo, address of token to swap to
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
@@ -509,15 +489,21 @@ contract CurveTripod is NoHedgeTripod {
         address _tokenTo,
         uint256 _amountIn
     ) internal view override returns (uint256) {
-        if(_amountIn <= minAmountToSell) {
+        if(_amountIn == 0) {
             return 0;
         }
 
-        require(_tokenTo == tokenA || _tokenTo == tokenB || _tokenTo == tokenC, "must be valid token"); 
+        require(_tokenTo == tokenA || 
+            _tokenTo == tokenB || 
+                _tokenTo == tokenC, 
+                    "must be valid token"); 
 
         //We should only use curve if from and to is one of the LP tokens AND useUniRouter == false
-        bool useCurve = false;
-        if(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC) useCurve = true;
+        bool useCurve;
+        if(_tokenFrom == tokenA 
+            || _tokenFrom == tokenB 
+                || _tokenFrom == tokenC) useCurve = true;
+
         if(useUniRouter) useCurve = false;
 
         if(!useCurve) {
@@ -557,6 +543,9 @@ contract CurveTripod is NoHedgeTripod {
             }
             i++;
         }
+
+        //If we get here we do not have the correct pool
+        revert("No pool index");
     }
 
     /*
@@ -611,7 +600,6 @@ contract CurveTripod is NoHedgeTripod {
      * @notice
      *  Function used by keepers to assess whether to harvest the joint and compound generated
      * fees into the existing position
-     * are greater than minRewardToHarvest
      * @param callCost, call cost parameter
      * @return bool amount assessing whether to harvest or not
      */
@@ -643,15 +631,13 @@ contract CurveTripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Function used by harvest trigger in the providers to assess whether to harvest it as
+     *  Function used by harvest trigger to assess whether to harvest it as
      * the joint may have gone out of bounds. If debt ratio is kept in the vaults, the joint
      * re-centers, if debt ratio is 0, the joint is simpley closed and funds are sent back
      * to each provider
-     * @return bool amount assessing whether to end the epoch or not
+     * @return bool assessing whether to end the epoch or not
      */
-    function shouldEndEpoch() public view override returns (bool) {
-        
-    }
+    function shouldEndEpoch() public view override returns (bool) {}
 
     /*
     * @notice 
@@ -700,33 +686,35 @@ contract CurveTripod is NoHedgeTripod {
         ) {
             return true;
         }
+
+        return false;
     }
 
         /*
      * @notice
      *  Function available internally deciding the swapping path to follow
-     * @param _token_in, address of the token to swap from
-     * @param _token_to, address of the token to swap to
+     * @param _tokenIn, address of the token to swap from
+     * @param _tokenOut, address of the token to swap to
      * @return address array of the swap path to follow
      */
-    function getTokenOutPath(address _token_in, address _token_out)
+    function getTokenOutPath(address _tokenIn, address _tokenOut)
         internal
         view
         returns (address[] memory _path)
     {   
-        bool isReferenceToken = _token_in == address(referenceToken) ||
-            _token_out == address(referenceToken);
+        bool isReferenceToken = _tokenIn == address(referenceToken) ||
+            _tokenOut == address(referenceToken);
         _path = new address[](isReferenceToken ? 2 : 3);
-        _path[0] = _token_in;
+        _path[0] = _tokenIn;
         if (isReferenceToken) {
-            _path[1] = _token_out;
+            _path[1] = _tokenOut;
         } else {
             _path[1] = address(referenceToken);
-            _path[2] = _token_out;
+            _path[2] = _tokenOut;
         }
     }
 
-    function maxApprove(address _token, address _contract) internal{
+    function maxApprove(address _token, address _contract) internal {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
     }
 }

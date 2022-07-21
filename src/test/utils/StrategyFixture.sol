@@ -9,7 +9,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ExtendedTest} from "./ExtendedTest.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IVault} from "../../interfaces/Vault.sol";
-import {CurveTripod} from "../../DeXes/CurveTripod.sol";
+import {CurveTripod} from "../../DEXes/CurveTripod.sol";
 import {ProviderStrategy} from "../../ProviderStrategy.sol";
 import {AggregatorV3Interface} from "../../interfaces/AggregatorV3Interface.sol";
 
@@ -35,6 +35,8 @@ contract StrategyFixture is ExtendedTest {
     address public cvx = 0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B;
 
     address public pool = 0xD51a44d3FaE010294C616388b506AcdA1bfAAE46;
+
+    address public rewardsContract = 0x9D5C5E364D81DaB193b72db9E9BE9D8ee669B652;
 
     string[] public wantTokens;
     AssetFixture[] public assetFixtures;
@@ -101,7 +103,8 @@ contract StrategyFixture is ExtendedTest {
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
             address(weth),
-            pool
+            pool,
+            rewardsContract
         );
    
         //Add the tripod to each providor strategy
@@ -128,11 +131,11 @@ contract StrategyFixture is ExtendedTest {
         address _guardian,
         address _management
     ) public returns (address) {
-        vm.prank(_gov);
+        vm.startPrank(_gov);
         address _vaultAddress = deployCode(vaultArtifact);
         IVault _vault = IVault(_vaultAddress);
 
-        vm.prank(_gov);
+        //vm.prank(_gov);
         _vault.initialize(
             _token,
             _gov,
@@ -143,8 +146,9 @@ contract StrategyFixture is ExtendedTest {
             _management
         );
 
-        vm.prank(_gov);
+        //vm.prank(_gov);
         _vault.setDepositLimit(type(uint256).max);
+        vm.stopPrank();
 
         return address(_vault);
     }
@@ -154,16 +158,19 @@ contract StrategyFixture is ExtendedTest {
         address _providerB,
         address _providerC,
         address _referenceToken,
-        address _pool
+        address _pool,
+        address _rewardsContract
     ) internal {
         tripod = new CurveTripod(
             _providerA,
             _providerB,
             _providerC,
             _referenceToken,
-            _pool
+            _pool,
+            _rewardsContract
         );
 
+        vm.prank(gov);
         tripod.setKeeper(keeper);
     }
 
@@ -171,8 +178,9 @@ contract StrategyFixture is ExtendedTest {
         for (uint8 i = 0; i < assetFixtures.length; ++i) {
             ProviderStrategy _provider = assetFixtures[i].strategy;
 
-            vm.prank(gov);
+            vm.startPrank(gov);
             _provider.setJoint(address(tripod));
+            vm.stopPrank();
         }
     }
 
@@ -216,8 +224,9 @@ contract StrategyFixture is ExtendedTest {
         );
         ProviderStrategy _strategy = ProviderStrategy(_strategyAddr);
 
-        vm.prank(_gov);
+        vm.startPrank(_gov);
         _vault.addStrategy(_strategyAddr, 10_000, 0, type(uint256).max, 1_000);
+        vm.stopPrank();
 
         return (address(_vault), address(_strategy));
     }

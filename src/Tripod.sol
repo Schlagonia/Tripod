@@ -757,7 +757,7 @@ abstract contract Tripod {
                             (startingB - change0), 
                                 (startingC - change1));
             } else {
-                //swapping B -> C and A
+                //swapping B -> A and C
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(avgRatio, tokenB, ratioB, tokenA, ratioA, tokenC, ratioC);
                 return ((startingA + change1), 
@@ -952,10 +952,7 @@ abstract contract Tripod {
      *  Function available internally swapping amounts necessary to swap rewards
      *  This can be overwritten in order to apply custom reward token swaps
      */
-    function swapRewardTokens()
-        internal
-        virtual
-    {
+    function swapRewardTokens() internal virtual {
         address _tokenA = tokenA;
         address _tokenB = tokenB;
         address _tokenC = tokenC;
@@ -968,7 +965,7 @@ abstract contract Tripod {
                 continue;
             // If the referenceToken is either A B or C, swap rewards against it 
             } else if (usingReference) {
-                    swap(reward, referenceToken, _rewardBal, 0); 
+                    swapReward(reward, referenceToken, _rewardBal, 0); 
             } else {
                 // Assume that position has already been liquidated
                 //Instead this should just return the token with the lowest ratio
@@ -980,11 +977,11 @@ abstract contract Tripod {
        
                 //If everything is equal use A   
                 if(ratioA <= ratioB && ratioA <= ratioC) {
-                    swap(reward, _tokenA, _rewardBal, 0);
+                    swapReward(reward, _tokenA, _rewardBal, 0);
                 } else if(ratioB <= ratioC) {
-                    swap(reward, _tokenB, _rewardBal, 0);
+                    swapReward(reward, _tokenB, _rewardBal, 0);
                 } else {
-                    swap(reward, _tokenC, _rewardBal, 0);
+                    swapReward(reward, _tokenC, _rewardBal, 0);
                 }
             }
         }
@@ -996,6 +993,25 @@ abstract contract Tripod {
         uint256 _amountIn,
         uint256 _minOutAmount
     ) internal virtual returns (uint256 _amountOut);
+
+    /*
+    * @notice
+    *   Internal function to swap the reward tokens into one of the provider tokens
+    *   Can be overwritten if different logic is required for reward tokens than provider tokens
+    * @param _from, address of the reward token we are swapping from
+    * @param _t0, address of the token we are swapping to
+    * @param _amount, amount to swap from
+    * @param _minOut, minimum out we will accept
+    * @returns the amount swapped to
+    */
+    function swapReward(
+        address _from, 
+        address _to, 
+        uint256 _amountIn, 
+        uint256 _minOut
+    ) internal virtual returns (uint256) {
+        return swap(_from, _to, _amountIn, _minOut);
+    }
 
     function quote(
         address _tokenFrom,
