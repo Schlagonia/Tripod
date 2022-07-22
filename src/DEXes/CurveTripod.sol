@@ -14,10 +14,6 @@ import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
-interface IBaseFee {
-    function isCurrentBaseFeeAcceptable() external view returns (bool);
-}
-
 contract CurveTripod is NoHedgeTripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -585,48 +581,6 @@ contract CurveTripod is NoHedgeTripod {
                 minOutAmount
                 );
         }
-
-        
-    }
-
-    // check if the current baseFee is below our external target
-    function isBaseFeeAcceptable() internal view returns (bool) {
-        return
-            IBaseFee(0xb5e1CAcB567d98faaDB60a1fD4820720141f064F)
-                .isCurrentBaseFeeAcceptable();
-    }
-
-    /*
-     * @notice
-     *  Function used by keepers to assess whether to harvest the joint and compound generated
-     * fees into the existing position
-     * @param callCost, call cost parameter
-     * @return bool amount assessing whether to harvest or not
-     */
-    function harvestTrigger(uint256 /*callCost*/) external view override returns (bool) {
-
-        // check if the base fee gas price is higher than we allow. if it is, block harvests.
-        if (!isBaseFeeAcceptable()) {
-            return false;
-        }
-
-        if (dontInvestWant) {
-            return true;
-        }
-
-        if (shouldStartEpoch()) {
-            return true;
-        }
-        
-        if (shouldEndEpoch()) {
-            return true;
-        }
-
-        if(providerA.launchHarvest() || providerB.launchHarvest() || providerC.launchHarvest()) {
-            return true;
-        }
-
-        return false;
     }
 
     /*

@@ -40,7 +40,7 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(!tripod.harvestTrigger(1), "Check 3");
 
         vm.prank(gov);
-        assetFixtures[0].strategy.setLaunchHarvest(true);
+        tripod.setLaunchHarvest(true);
 
         assertTrue(tripod.harvestTrigger(3), "check 4");
 

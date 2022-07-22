@@ -91,8 +91,8 @@ contract StrategyMigrationTest is StrategyFixture {
             vm.prank(gov);
             _vault.migrateStrategy(address(_provider), _newProvider);
 
-            vm.prank(gov);
-            newProvider.setHealthCheck(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
+            //vm.prank(gov);
+            //newProvider.setHealthCheck(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
 
             vm.prank(gov);
             newProvider.setJoint(address(tripod));

@@ -27,6 +27,10 @@ interface ProviderStrategy {
     function launchHarvest() external view returns (bool);
 }
 
+interface IBaseFee {
+    function isCurrentBaseFeeAcceptable() external view returns (bool);
+}
+
 abstract contract Tripod {
     using SafeERC20 for IERC20;
     using Address for address;
@@ -62,6 +66,8 @@ abstract contract Tripod {
     //Address of the Keeper for this strategy
     address public keeper;
 
+    //Bool manually set to determine wether we should harvest
+    bool public launchHarvest;
     // Boolean values protecting against re-investing into the pool
     bool public dontInvestWant;
     bool public autoProtectionDisabled;
@@ -317,6 +323,9 @@ abstract contract Tripod {
     *   Providers have approval to pull whatever they need
     */
     function harvest() external onlyKeepers {
+        if (launchHarvest) {
+            launchHarvest = false;
+        }
         // Check if it needs to stop starting new epochs after finishing this one.
         // _autoProtect is implemented in children
         if (_autoProtect() && !autoProtectionDisabled) {
@@ -444,8 +453,44 @@ abstract contract Tripod {
         _returnLooseToProviders();
     }
 
+    /*
+    * @notice
+    * External function for vault managers to set launchHarvest
+    */
+    function setLaunchHarvest(bool _newLaunchHarvest) external onlyVaultManagers {
+        launchHarvest = _newLaunchHarvest;
+    }
+
+    /*
+     * @notice
+     *  Function used by keepers to assess whether to harvest the joint and compound generated
+     * fees into the existing position
+     * @param callCost, call cost parameter
+     * @return bool, assessing whether to harvest or not
+     */
     function harvestTrigger(uint256 /*callCost*/) external view virtual returns (bool) {
-        return balanceOfRewardToken()[0] > minRewardToHarvest || shouldStartEpoch();
+        // check if the base fee gas price is higher than we allow. if it is, block harvests.
+        if (!isBaseFeeAcceptable()) {
+            return false;
+        }
+
+        if(launchHarvest) {
+            return true;
+        }
+
+        if (dontInvestWant) {
+            return true;
+        }
+
+        if (shouldStartEpoch()) {
+            return true;
+        }
+        
+        if (shouldEndEpoch()) {
+            return true;
+        }
+
+        return false;
     }
 
     /*
@@ -465,7 +510,7 @@ abstract contract Tripod {
     /*
     * @notice
     *   Trigger to tell Keepers if they should call tend()
-    *   Can be implemented with an overRide if applicable
+    *   Defaults to false. Can be implemented in children if needed
     */
     function tendTrigger(uint256 /*callCost*/) external view virtual returns (bool) {
         return false;
@@ -1263,5 +1308,12 @@ abstract contract Tripod {
             _token.safeApprove(_contract, 0);
             _token.safeApprove(_contract, type(uint256).max);
         }
+    }
+
+    // check if the current baseFee is below our external target
+    function isBaseFeeAcceptable() internal view returns (bool) {
+        return
+            IBaseFee(0xb5e1CAcB567d98faaDB60a1fD4820720141f064F)
+                .isCurrentBaseFeeAcceptable();
     }
 }

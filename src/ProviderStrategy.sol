@@ -38,9 +38,21 @@ contract ProviderStrategy is BaseStrategyInitializable {
 
     address public tripod;
 
-    bool public launchHarvest;
-
     constructor(address _vault) BaseStrategyInitializable(_vault) {
+        initializeThis();
+    }
+
+    function initialize(
+        address _vault,
+        address _strategist,
+        address _rewards,
+        address _keeper
+    ) external override {
+        _initialize(_vault, _strategist, _rewards, _keeper);
+        initializeThis();
+    }
+
+    function initializeThis() internal {
         healthCheck = 0xDDCea799fF1699e98EDF118e0629A974Df7DF012;
     }
 
@@ -66,10 +78,6 @@ contract ProviderStrategy is BaseStrategyInitializable {
         return vault.strategies(address(this)).totalDebt;
     }
 
-    function setLaunchHarvest(bool _newLaunchHarvest) external onlyVaultManagers {
-        launchHarvest = _newLaunchHarvest;
-    }
-
     function prepareReturn(uint256 _debtOutstanding)
         internal
         override
@@ -79,9 +87,6 @@ contract ProviderStrategy is BaseStrategyInitializable {
             uint256 _debtPayment
         )
     {
-        if (launchHarvest) {
-            launchHarvest = false;
-        }
         // NOTE: Harvests are all done throught the joint/Tripod contract
         // The Joint will always close the position to realize profits then call harvest here 
 
@@ -143,15 +148,15 @@ contract ProviderStrategy is BaseStrategyInitializable {
         return TripodAPI(tripod).dontInvestWant();
     }
 
-    function adjustPosition(uint256 /*_debtOutstanding*/) internal override {
+    function adjustPosition(uint256 _debtOutstanding) internal override {
         if (emergencyExit || dontInvestWant()) {
             return;
         }
 
         // Using a push approach (instead of pull)
         uint256 wantBalance = balanceOfWant();
-        if (wantBalance > 0) {
-            want.safeTransfer(tripod, wantBalance);
+        if (wantBalance > _debtOutstanding) {
+            want.safeTransfer(tripod, wantBalance - _debtOutstanding);
         }
     }
 
@@ -191,7 +196,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
             TripodAPI(_tripod).providerA() == address(this) ||
                 TripodAPI(_tripod).providerB() == address(this) ||
                     TripodAPI(_tripod).providerC() == address(this),
-                    "!providers"
+                        "!providers"
         );
         require(healthCheck != address(0), "need healthCheck");
         tripod = _tripod;
