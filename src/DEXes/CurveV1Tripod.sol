@@ -14,7 +14,7 @@ import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
-contract CurveTripod is NoHedgeTripod {
+contract CurveV1Tripod is NoHedgeTripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using SafeCast for int256;
@@ -31,7 +31,7 @@ contract CurveTripod is NoHedgeTripod {
     //The token the Curve pool mints for LP deposits
     address public poolToken;
     //Index mapping provider token to its crv index 
-    mapping (address => uint256) private index;
+    mapping (address => int128) private index;
 
     //Convex contracts for staking and rewwards
     IConvexDeposit public constant depositContract = 
@@ -57,7 +57,8 @@ contract CurveTripod is NoHedgeTripod {
      * @param _providerB, provider strategy of tokenB
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
-     * @param _pool, Uni V3 pool to LP
+     * @param _pool, Curve pool to LP
+     * @Param _poolToken, Token the Curve Pool issues
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      */
     constructor(
@@ -66,9 +67,10 @@ contract CurveTripod is NoHedgeTripod {
         address _providerC,
         address _referenceToken,
         address _pool,
+        address _poolToken,
         address _rewardsContract
     ) NoHedgeTripod(_providerA, _providerB, _providerC, _referenceToken, _pool) {
-        _initializeCurveTripod(_rewardsContract);
+        _initializeCurveV1Tripod(_poolToken, _rewardsContract);
     }
 
     /*
@@ -78,7 +80,8 @@ contract CurveTripod is NoHedgeTripod {
      * @param _providerB, provider strategy of tokenB
 	 * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
-     * @param _pool, Uni V3 pool to LP
+     * @param _pool, Curve pool to LP
+     * @Param _poolToken, Token the Curve Pool issues
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      */
     function initialize(
@@ -87,21 +90,23 @@ contract CurveTripod is NoHedgeTripod {
         address _providerC,
         address _referenceToken,
         address _pool,
+        address _poolToken,
         address _rewardsContract
     ) external {
         _initialize(_providerA, _providerB, _providerC, _referenceToken, _pool);
-        _initializeCurveTripod(_rewardsContract);
+        _initializeCurveV1Tripod(_poolToken, _rewardsContract);
     }
 
     /*
      * @notice
      *  Initialize CurveTtripod specifics
+     * @param _poolToken, Token the Curve pool issues
      * @param _rewardsContract, The Convex rewards contract specific to this LP token
      */
-    function _initializeCurveTripod(address _rewardsContract) internal {
+    function _initializeCurveV1Tripod(address _poolToken, address _rewardsContract) internal {
         rewardsContract = IConvexRewards(_rewardsContract);
         //Get the token we will be using
-        poolToken = ICurveFi(pool).token();
+        poolToken = _poolToken;
         //UPdate the PID for the rewards pool
         pid = rewardsContract.pid();
 
@@ -133,16 +138,18 @@ contract CurveTripod is NoHedgeTripod {
      * @param _providerB, provider strategy of tokenB
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
-     * @param _pool, Uni V3 pool to LP
+     * @param _pool, Curve pool to LP
+     * @Param _poolToken, Token the Curve Pool issues
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      * @return newJoint, address of newly deployed joint
      */
-    function cloneCurveTripod(
+    function cloneCurveV1Tripod(
         address _providerA,
         address _providerB,
         address _providerC,
         address _referenceToken,
         address _pool,
+        address _poolToken,
         address _rewardsContract
     ) external returns (address newJoint) {
         require(isOriginal, "!original");
@@ -163,12 +170,13 @@ contract CurveTripod is NoHedgeTripod {
             newJoint := create(0, clone_code, 0x37)
         }
 
-        CurveTripod(newJoint).initialize(
+        CurveV1Tripod(newJoint).initialize(
             _providerA,
             _providerB,
             _providerC,
             _referenceToken,
             _pool,
+            _poolToken,
             _rewardsContract
         );
 
@@ -187,7 +195,7 @@ contract CurveTripod is NoHedgeTripod {
             )
         );
 
-        return string(abi.encodePacked("NoHedgeCurveTripod(", symbol, ")"));
+        return string(abi.encodePacked("NoHedgeCurveV1Tripod(", symbol, ")"));
     }
 
     /*
@@ -270,9 +278,9 @@ contract CurveTripod is NoHedgeTripod {
      *  Function returning the amount of rewards earned until now
      * @return uint256 array of amounts of expected rewards earned
      */
-    function pendingRewards() public view override returns (uint256[] memory) {
+    function pendingRewards() public view override returns (uint256[] memory _amountPending) {
         // Initialize the array to same length as reward tokens
-        uint256[] memory _amountPending = new uint256[](rewardTokens.length);
+        _amountPending = new uint256[](rewardTokens.length);
 
         //Save the earned CrV rewards to 0 where crv will be
         _amountPending[0] = 
@@ -311,9 +319,9 @@ contract CurveTripod is NoHedgeTripod {
         uint256 _cBalance = balanceOfC();
 
         uint256[3] memory amounts;
-        amounts[index[tokenA]] = _aBalance;
-        amounts[index[tokenB]] = _bBalance;
-        amounts[index[tokenC]] = _cBalance;
+        amounts[uint256(int256(index[tokenA]))] = _aBalance;
+        amounts[uint256(int256(index[tokenB]))] = _bBalance;
+        amounts[uint256(int256(index[tokenC]))] = _cBalance;
 
         ICurveFi(pool).add_liquidity(
             amounts, 
@@ -332,10 +340,31 @@ contract CurveTripod is NoHedgeTripod {
     /*
      * @notice
      *  Function used internally to close the LP position: 
+     *      - burns the LP liquidity specified amount, all mins are 0
+     * @param amount, amount of liquidity to burn
+     */
+    function burnLP(
+        uint256 _amount
+    ) internal override {
+
+        uint256[3] memory amounts;
+
+        ICurveFi(pool).remove_liquidity(
+            _amount, 
+            amounts
+        );
+    }
+
+    /*
+     * @notice
+     *  Function used internally to close the LP position: 
      *      - burns the LP liquidity specified amount
-     *      - collects all pending rewards
+     *      - Assures that the min is received
      *  
      * @param amount, amount of liquidity to burn
+     * @param minAOut, the min amount of Token A we should receive
+     * @param minBOut, the min amount of Token B we should recieve
+     * @param minCout, the min amount of Token C we should recieve
      */
     function burnLP(
         uint256 _amount,
@@ -345,13 +374,13 @@ contract CurveTripod is NoHedgeTripod {
     ) internal override {
 
         uint256[3] memory amounts;
-        amounts[index[tokenA]] = minAOut;
-        amounts[index[tokenB]] = minBOut;
-        amounts[index[tokenC]] = minCOut;
+        amounts[uint256(int256(index[tokenA]))] = minAOut;
+        amounts[uint256(int256(index[tokenB]))] = minBOut;
+        amounts[uint256(int256(index[tokenC]))] = minCOut;
 
-        ICurveFi(pool).remove_liquidity(
-            _amount, 
-            amounts
+        ICurveFi(pool).remove_liquidity_imbalance(
+            amounts,
+            _amount 
         );
     }
 
@@ -457,7 +486,7 @@ contract CurveTripod is NoHedgeTripod {
 
         } else {
             ICurveFi _pool = ICurveFi(pool);
-        
+
             // Perform swap
             _pool.exchange(
                 index[_tokenFrom], 
@@ -530,14 +559,16 @@ contract CurveTripod is NoHedgeTripod {
      *  Function used internally to retrieve the CRV index for a token in a CRV pool
      * @return the token's pool index
      */
-    function _getCRVPoolIndex(address _token) internal view returns(uint256) {
-        uint256 i = 0;
+    function _getCRVPoolIndex(address _token) internal view returns(int128) {
         ICurveFi _pool = ICurveFi(pool);
+        uint256 i = 0; 
+        int128 poolIndex = 0;
         while (i < 3) {
             if (_pool.coins(i) == _token) {
-                return i;
+                return poolIndex;
             }
             i++;
+            poolIndex++;
         }
 
         //If we get here we do not have the correct pool

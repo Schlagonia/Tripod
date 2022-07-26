@@ -7,7 +7,7 @@ import "forge-std/console.sol";
 
 // NOTE: if the name of the strat or file changes this needs to be updated
 import {ProviderStrategy} from "../ProviderStrategy.sol";
-import {CurveTripod} from "../DEXes/CurveTripod.sol";
+import {CurveV1Tripod} from "../DEXes/CurveV1Tripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {IVault} from "../interfaces/Vault.sol";
@@ -70,6 +70,37 @@ contract TripodSetupTest is StrategyFixture {
         assertRelApproxEq(providerB.estimatedTotalAssets(), tripod.invested(address(providerB.want())) + tripod.balanceOfB(), DELTA);
         assertRelApproxEq(providerC.estimatedTotalAssets(), tripod.invested(address(providerC.want())) + tripod.balanceOfC(), DELTA);
 
+    }
+
+    function testInvested(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
+
+        ProviderStrategy providerA = assetFixtures[0].strategy;
+        ProviderStrategy providerB = assetFixtures[1].strategy;
+        ProviderStrategy providerC = assetFixtures[2].strategy;
+
+        console.log("A Invested", tripod.invested(address(providerA.want())));
+        console.log("B Invested", tripod.invested(address(providerB.want())));
+        console.log("C Invested", tripod.invested(address(providerC.want())));
+
+        assertRelApproxEq(deposited[0], tripod.invested(address(providerA.want())), DELTA);
+        assertRelApproxEq(deposited[1], tripod.invested(address(providerB.want())), DELTA);
+        assertRelApproxEq(deposited[2], tripod.invested(address(providerC.want())), DELTA);
+
+
+        //Make a profit harvest again and recheck
+        deal(crv, address(tripod), _amount/10);
+        deal(cvx, address(tripod), _amount/10);
+        setProvidersHealthCheck(false);
+        // Harvest 2: Realize profit
+        skip(1);
+        vm.prank(keeper);
+        tripod.harvest();
+
+        assertRelApproxEq(deposited[0], tripod.invested(address(providerA.want())), DELTA);
+        assertRelApproxEq(deposited[1], tripod.invested(address(providerB.want())), DELTA);
+        assertRelApproxEq(deposited[2], tripod.invested(address(providerC.want())), DELTA);
     }
 
 }

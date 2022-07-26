@@ -14,13 +14,9 @@ import {VaultAPI} from "@yearnvaults/contracts/BaseStrategy.sol";
 interface ProviderStrategy {
     function vault() external view returns (VaultAPI);
 
-    function strategist() external view returns (address);
-
     function keeper() external view returns (address);
 
     function want() external view returns (address);
-
-    function totalDebt() external view returns (uint256);
 
     function harvest() external;
 
@@ -178,6 +174,7 @@ abstract contract Tripod {
         providerA = ProviderStrategy(_providerA);
         providerB = ProviderStrategy(_providerB);
         providerC = ProviderStrategy(_providerC);
+
         referenceToken = _referenceToken;
         pool = _pool;
         keeper = msg.sender;
@@ -979,6 +976,8 @@ abstract contract Tripod {
 
     function createLP() internal virtual returns (uint256, uint256, uint256);
 
+    function burnLP(uint256 amount) internal virtual;
+
     function burnLP(
         uint256 amount, 
         uint256 minAOut, 
@@ -1086,12 +1085,7 @@ abstract contract Tripod {
         // **WARNING**: This call is sandwichable, care should be taken
         //              to always execute with a private relay
         // We take care of mins in the harvest logic to assure we account for swaps
-        burnLP(
-            balanceOfPool(), 
-            0, 
-            0, 
-            0
-        );
+        burnLP(balanceOfPool());
 
         return (balanceOfA(), balanceOfB(), balanceOfC());
     }
@@ -1179,8 +1173,7 @@ abstract contract Tripod {
     /*
      * @notice
      *  Function available to vault managers closing the joint position manually
-     *  This may not work when pool is not equally balanced. In those cases different manual function
-     *  should be implemented in children for specific strategies or use removeLiquidityManually to just burn LP token
+     *  This will attempt to rebalance properly after withdraw.
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
      * @param expectedBalanceC, expected balance of tokenC to receive
@@ -1190,10 +1183,14 @@ abstract contract Tripod {
         uint256 expectedBalanceB,
         uint256 expectedBalanceC
     ) external onlyVaultManagers {
-        (uint256 balanceA, uint256 balanceB, uint256 balanceC) = _closePosition();
-        require(expectedBalanceA <= balanceA, "!sandwiched");
-        require(expectedBalanceB <= balanceB, "!sandwiched");
-        require(expectedBalanceC <= balanceC, "!sandwiched");
+        uint256 _a = balanceOfA();
+        uint256 _b = balanceOfB();
+        uint256 _c = balanceOfC();
+        _closePosition();
+        rebalance();
+        require(expectedBalanceA <= balanceOfA() - _a, "!sandwiched");
+        require(expectedBalanceB <= balanceOfB() - _b, "!sandwiched");
+        require(expectedBalanceC <= balanceOfC() - _c, "!sandwiched");
     }
 
     /*

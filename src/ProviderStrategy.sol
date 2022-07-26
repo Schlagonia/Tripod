@@ -25,10 +25,6 @@ interface TripodAPI {
 
     function migrateProvider(address _newProvider) external;
 
-    function shouldEndEpoch() external view returns (bool);
-
-    function shouldStartEpoch() external view returns (bool);
-
     function dontInvestWant() external view returns (bool);
 }
 
@@ -89,7 +85,6 @@ contract ProviderStrategy is BaseStrategyInitializable {
     {
         // NOTE: Harvests are all done throught the joint/Tripod contract
         // The Joint will always close the position to realize profits then call harvest here 
-
         // After the positions are closed all funds are kept at the joint and can be pulled if needed
         uint256 amountAvailable = balanceOfWant();
         uint256 amountAtTripod = want.balanceOf(tripod);
@@ -212,7 +207,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
     {
         //Closes any open positions and sets DontInvestWant == true
         TripodAPI(tripod).closeAllPositions();
-
+        
 	    uint256 amount = want.balanceOf(tripod);
         if (amount > 0) {
             want.safeTransferFrom(tripod, address(this), amount);

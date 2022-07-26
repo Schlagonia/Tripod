@@ -5,7 +5,7 @@ import {StrategyFixture} from "./utils/StrategyFixture.sol";
 import "forge-std/console.sol";
 
 import {ProviderStrategy} from "../ProviderStrategy.sol";
-import {CurveTripod} from "../DEXes/CurveTripod.sol";
+import {CurveV1Tripod} from "../DEXes/CurveV1Tripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -55,7 +55,7 @@ contract StrategyOperationsTest is StrategyFixture {
             fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 5_000);
         }
 
-        skip(1);
+        skip(1 days);
         vm.prank(keeper);
         tripod.harvest();
 
@@ -69,7 +69,7 @@ contract StrategyOperationsTest is StrategyFixture {
             vm.prank(gov);
             fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 10_000);
         }
-        skip(1);
+        skip(1 days);
         vm.prank(keeper);
         tripod.harvest();
 
