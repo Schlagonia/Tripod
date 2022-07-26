@@ -270,9 +270,9 @@ contract CurveTripod is NoHedgeTripod {
      *  Function returning the amount of rewards earned until now
      * @return uint256 array of amounts of expected rewards earned
      */
-    function pendingRewards() public view override returns (uint256[] memory) {
+    function pendingRewards() public view override returns (uint256[] memory _amountPending) {
         // Initialize the array to same length as reward tokens
-        uint256[] memory _amountPending = new uint256[](rewardTokens.length);
+        _amountPending = new uint256[](rewardTokens.length);
 
         //Save the earned CrV rewards to 0 where crv will be
         _amountPending[0] = 
@@ -332,10 +332,31 @@ contract CurveTripod is NoHedgeTripod {
     /*
      * @notice
      *  Function used internally to close the LP position: 
+     *      - burns the LP liquidity specified amount, all mins are 0
+     * @param amount, amount of liquidity to burn
+     */
+    function burnLP(
+        uint256 _amount
+    ) internal override {
+
+        uint256[3] memory amounts;
+
+        ICurveFi(pool).remove_liquidity(
+            _amount, 
+            amounts
+        );
+    }
+
+    /*
+     * @notice
+     *  Function used internally to close the LP position: 
      *      - burns the LP liquidity specified amount
-     *      - collects all pending rewards
+     *      - Assures that the min is received
      *  
      * @param amount, amount of liquidity to burn
+     * @param minAOut, the min amount of Token A we should receive
+     * @param minBOut, the min amount of Token B we should recieve
+     * @param minCout, the min amount of Token C we should recieve
      */
     function burnLP(
         uint256 _amount,
@@ -350,7 +371,7 @@ contract CurveTripod is NoHedgeTripod {
         amounts[index[tokenC]] = minCOut;
 
         ICurveFi(pool).remove_liquidity(
-            _amount, 
+            _amount,
             amounts
         );
     }
