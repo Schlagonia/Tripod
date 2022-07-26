@@ -9,7 +9,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ExtendedTest} from "./ExtendedTest.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IVault} from "../../interfaces/Vault.sol";
-import {CurveTripod} from "../../DEXes/CurveTripod.sol";
+import {CurveV2Tripod} from "../../DEXes/CurveV2Tripod.sol";
 import {ProviderStrategy} from "../../ProviderStrategy.sol";
 import {AggregatorV3Interface} from "../../interfaces/AggregatorV3Interface.sol";
 
@@ -28,17 +28,24 @@ contract StrategyFixture is ExtendedTest {
         string name;
     }
 
-    CurveTripod public tripod;
+    struct Pool {
+        address pool;
+        address poolToken;
+        address rewardsContract;
+        string[3] wantTokens;
+    }
+
+    Pool public poolUsing;
+
+    CurveV2Tripod public tripod;
     IERC20 public weth;
 
     address public crv = 0xD533a949740bb3306d119CC777fa900bA034cd52;
     address public cvx = 0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B;
-    address public pool = 0xD51a44d3FaE010294C616388b506AcdA1bfAAE46;
-
-    address public rewardsContract = 0x9D5C5E364D81DaB193b72db9E9BE9D8ee669B652;
 
     string[] public wantTokens;
     AssetFixture[] public assetFixtures;
+    Pool[] public pools;
     mapping(address => AssetFixture) public fixture;
 
     mapping(string => address) public tokenAddrs;
@@ -64,16 +71,16 @@ contract StrategyFixture is ExtendedTest {
     function setUp() public virtual {
         _setTokenPrices();
         _setTokenAddrs();
+        //Creates the pools list to choose from what to test
+        createPools();
+
+        //Note this index needs to be updated to change what pool we are testing with
+        poolUsing = pools[0];
 
         weth = IERC20(tokenAddrs["WETH"]);
-
-        //SEt up what tokens we are using in the LP
-        wantTokens.push("USDT");
-        wantTokens.push("WETH");
-        wantTokens.push("WBTC");
-
-        for (uint8 i = 0; i < wantTokens.length; ++i) {
-            string memory _tokenToTest = wantTokens[i];
+        console.log("Deploying vaults and providers");
+        for (uint8 i = 0; i < poolUsing.wantTokens.length; ++i) {
+            string memory _tokenToTest = poolUsing.wantTokens[i];
             IERC20 _want = IERC20(tokenAddrs[_tokenToTest]);
 
             (address _vault, address _strategy) = deployVaultAndStrategy(
@@ -95,17 +102,19 @@ contract StrategyFixture is ExtendedTest {
             vm.label(address(_strategy), string(abi.encodePacked(_tokenToTest, "Strategy")));
             vm.label(address(_want), _tokenToTest);
         }
-
+        console.log("Deploying tripod");
         //Deploye Tripod Strategy
         deployTripod(
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
             address(weth),
-            pool,
-            rewardsContract
+            poolUsing.pool,
+            poolUsing.poolToken,
+            poolUsing.rewardsContract
         );
-   
+
+        console.log("Setting tripod");
         //Add the tripod to each providor strategy
         setTripod();
 
@@ -118,6 +127,8 @@ contract StrategyFixture is ExtendedTest {
         vm.label(management, "Management");
         vm.label(strategist, "Strategist");
         vm.label(keeper, "Keeper");
+        vm.label(poolUsing.pool, "Curve Pool");
+        vm.label(poolUsing.rewardsContract, "Convex pool");
     }
 
     // Deploys a vault
@@ -158,9 +169,10 @@ contract StrategyFixture is ExtendedTest {
         address _providerC,
         address _referenceToken,
         address _pool,
+        address _poolToken,
         address _rewardsContract
     ) internal {
-        tripod = new CurveTripod(
+        tripod = new CurveV2Tripod(
             _providerA,
             _providerB,
             _providerC,
@@ -168,7 +180,7 @@ contract StrategyFixture is ExtendedTest {
             _pool,
             _rewardsContract
         );
-
+        console.log("New tripod  created");
         vm.prank(gov);
         tripod.setKeeper(keeper);
     }
@@ -280,6 +292,23 @@ contract StrategyFixture is ExtendedTest {
             vm.prank(gov);
             assetFixtures[i].strategy.setDoHealthCheck(check);
         }  
+    }
+
+    function createPools() public {
+        //TriCrypto
+        pools.push(Pool(
+            0xD51a44d3FaE010294C616388b506AcdA1bfAAE46,
+            0xc4AD29ba4B3c580e6D59105FFf484999997675Ff,
+            0x9D5C5E364D81DaB193b72db9E9BE9D8ee669B652,
+            ["USDT", "WETH", "WBTC"]
+        ));
+        //3 Pool
+        pools.push(Pool(
+            0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7,
+            0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490,
+            0x689440f2Ff927E1f24c72F1087E1FAF471eCe1c8,
+            ["USDC", "DAI", "USDT"]
+        ));
     }
 
     function _setTokenAddrs() internal {

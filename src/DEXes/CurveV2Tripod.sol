@@ -14,7 +14,7 @@ import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
-contract CurveTripod is NoHedgeTripod {
+contract CurveV2Tripod is NoHedgeTripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using SafeCast for int256;
@@ -68,7 +68,7 @@ contract CurveTripod is NoHedgeTripod {
         address _pool,
         address _rewardsContract
     ) NoHedgeTripod(_providerA, _providerB, _providerC, _referenceToken, _pool) {
-        _initializeCurveTripod(_rewardsContract);
+        _initializeCurveV2Tripod(_rewardsContract);
     }
 
     /*
@@ -90,7 +90,7 @@ contract CurveTripod is NoHedgeTripod {
         address _rewardsContract
     ) external {
         _initialize(_providerA, _providerB, _providerC, _referenceToken, _pool);
-        _initializeCurveTripod(_rewardsContract);
+        _initializeCurveV2Tripod(_rewardsContract);
     }
 
     /*
@@ -98,7 +98,7 @@ contract CurveTripod is NoHedgeTripod {
      *  Initialize CurveTtripod specifics
      * @param _rewardsContract, The Convex rewards contract specific to this LP token
      */
-    function _initializeCurveTripod(address _rewardsContract) internal {
+    function _initializeCurveV2Tripod(address _rewardsContract) internal {
         rewardsContract = IConvexRewards(_rewardsContract);
         //Get the token we will be using
         poolToken = ICurveFi(pool).token();
@@ -137,7 +137,7 @@ contract CurveTripod is NoHedgeTripod {
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      * @return newJoint, address of newly deployed joint
      */
-    function cloneCurveTripod(
+    function cloneCurveV2Tripod(
         address _providerA,
         address _providerB,
         address _providerC,
@@ -163,7 +163,7 @@ contract CurveTripod is NoHedgeTripod {
             newJoint := create(0, clone_code, 0x37)
         }
 
-        CurveTripod(newJoint).initialize(
+        CurveV2Tripod(newJoint).initialize(
             _providerA,
             _providerB,
             _providerC,
@@ -187,7 +187,7 @@ contract CurveTripod is NoHedgeTripod {
             )
         );
 
-        return string(abi.encodePacked("NoHedgeCurveTripod(", symbol, ")"));
+        return string(abi.encodePacked("NoHedgeCurveV2Tripod(", symbol, ")"));
     }
 
     /*

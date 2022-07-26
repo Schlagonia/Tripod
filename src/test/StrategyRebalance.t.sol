@@ -5,7 +5,7 @@ import {StrategyFixture} from "./utils/StrategyFixture.sol";
 import "forge-std/console.sol";
 
 import {ProviderStrategy} from "../ProviderStrategy.sol";
-import {CurveTripod} from "../DEXes/CurveTripod.sol";
+import {CurveV2Tripod} from "../DEXes/CurveV2Tripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
@@ -44,50 +44,93 @@ contract RebalanceTest is StrategyFixture {
         console.log("B ratio ", bRatio, " profit was ", bProfit);
         console.log("C ratio ", cRatio, " profit was ", cProfit);
 
-        
+        assertGt(aRatio, 1e18);        
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
-
+/*
     function testRebalanceOnLoss(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
 
-        uint256 _a = tripod.invested(address(assetFixtures[0].strategy));
-        uint256 _b = tripod.invested(address(assetFixtures[1].strategy));
-        uint256 _c = tripod.invested(address(assetFixtures[2].strategy));
+        uint256 _a = tripod.invested(address(assetFixtures[0].want));
+        uint256 _b = tripod.invested(address(assetFixtures[1].want));
+        uint256 _c = tripod.invested(address(assetFixtures[2].want));
 
-        skip(1);
+        skip(2 hours);
 
         vm.startPrank(gov);
         tripod.removeLiquidityManually(
             tripod.totalLpBalance() / 10,
-            0,
-            0,
-            0
+            _a / 11,
+            _b / 15,
+            _c / 20
         );
         vm.stopPrank();
 
         vm.startPrank(address(tripod));
-        assetFixtures[0].want.safeTransfer(address(0), tripod.balanceOfA());
+        assetFixtures[0].want.safeTransfer(address(gov), tripod.balanceOfA());
+        assetFixtures[1].want.safeTransfer(address(gov), tripod.balanceOfB());
+        assetFixtures[2].want.safeTransfer(address(gov), tripod.balanceOfC());
         vm.stopPrank();
         //Turn off health check to allow for loss
         setProvidersHealthCheck(false);
+        vm.prank(gov);
+        tripod.setMaxPercentageLoss(1e17);
 
         vm.prank(keeper);
         tripod.harvest();
+
+        uint256 aRatio = (tripod.invested(address(assetFixtures[0].want)) * 1e18) / _a;
+        uint256 bRatio = (tripod.invested(address(assetFixtures[1].want)) * 1e18) / _b;
+        uint256 cRatio = (tripod.invested(address(assetFixtures[2].want)) * 1e18) / _c;
+      
+        console.log("A ratio ", aRatio);
+        console.log("B ratio ", bRatio);
+        console.log("C ratio ", cRatio);
+
+        assertGt(1e18, aRatio);
+        assertRelApproxEq(aRatio, bRatio, DELTA);
+        assertRelApproxEq(bRatio, cRatio, DELTA);
+    }
+*/
+    function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        depositAllVaultsAndHarvest(_amount);
+
+        skip(1);
+
+        (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
 
         (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
             _a,
             _b,
             _c
         );
-        console.log("A ratio ", aRatio);
-        console.log("B ratio ", bRatio);
-        console.log("C ratio ", cRatio);
 
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
+
+        skip(1);
+        //earn profit
+        deal(cvx, address(tripod), _amount/10);
+        deal(crv, address(tripod), _amount/10);
+        skip(1);
+
+        ( _a,  _b,  _c) = tripod.estimatedTotalAssetsAfterBalance();
+
+        (uint256 aRatio2, uint256 bRatio2, uint256 cRatio2) = tripod.getRatios(
+            _a,
+            _b,
+            _c
+        );
+
+        assertGt(aRatio2, 1e18);
+        assertRelApproxEq(aRatio2, bRatio2, DELTA);
+        assertRelApproxEq(bRatio2, cRatio2, DELTA);
+        assertGt(aRatio2, aRatio);
+        assertGt(bRatio2, bRatio);
+        assertGt(cRatio2, cRatio);
     }
 
     function testQuoteRebalance(uint256 _amount) public {

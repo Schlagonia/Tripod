@@ -5,7 +5,7 @@ import {StrategyFixture} from "./utils/StrategyFixture.sol";
 import "forge-std/console.sol";
 
 import {ProviderStrategy} from "../ProviderStrategy.sol";
-import {CurveTripod} from "../DEXes/CurveTripod.sol";
+import {CurveV2Tripod} from "../DEXes/CurveV2Tripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {IVault} from "../interfaces/Vault.sol";
@@ -16,29 +16,29 @@ contract StrategyMigrationTest is StrategyFixture {
     }
 
     function testCloneTripod() public {
-        address newTripod = tripod.cloneCurveTripod(
+        address newTripod = tripod.cloneCurveV2Tripod(
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
             address(weth),
-            pool,
-            rewardsContract
+            poolUsing.pool,
+            poolUsing.rewardsContract
         );
 
-        CurveTripod _newTripod = CurveTripod(newTripod);
+        CurveV2Tripod _newTripod = CurveV2Tripod(newTripod);
 
-        assertEq(pool, _newTripod.pool());
+        assertEq(poolUsing.pool, _newTripod.pool());
         assertTrue(!_newTripod.isOriginal());
 
         vm.expectRevert(bytes("!original"));
 
-        _newTripod.cloneCurveTripod(
+        _newTripod.cloneCurveV2Tripod(
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
             address(weth),
-            pool,
-            rewardsContract
+            poolUsing.pool,
+            poolUsing.rewardsContract
         );
 
         vm.expectRevert(bytes("Joint already initialized"));
@@ -48,8 +48,8 @@ contract StrategyMigrationTest is StrategyFixture {
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
             address(weth),
-            pool,
-            rewardsContract
+            poolUsing.pool,
+            poolUsing.rewardsContract
         );
     }
 
