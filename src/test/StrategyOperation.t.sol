@@ -89,10 +89,10 @@ contract StrategyOperationsTest is StrategyFixture {
 
         depositAllVaultsAndHarvest(_amount);
 
-        skip(2 days);
-        //deal(crv, address(tripod), _amount/10);
-        //deal(cvx, address(tripod), _amount/10);
-        //setProvidersHealthCheck(false);
+        //skip(2 days);
+        deal(crv, address(tripod), _amount/10);
+        deal(cvx, address(tripod), _amount/10);
+        setProvidersHealthCheck(false);
         // Harvest 2: Realize profit
         skip(1);
         vm.prank(keeper);
