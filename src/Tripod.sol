@@ -36,7 +36,7 @@ abstract contract Tripod {
     ProviderStrategy public providerA;
     // Provider strategy of tokenB
     ProviderStrategy public providerB;
-    // Provider strategy of TokenC
+    // Provider strategy of tokenC
     ProviderStrategy public providerC;
 
     // Address of tokenA
@@ -156,7 +156,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Constructor equivalent for clones, initializing the joint and the specifics of UniV3Joint
+     *  Constructor equivalent for clones, initializing the tripod
      * @param _providerA, provider strategy of tokenA
      * @param _providerB, provider strategy of tokenB
      * @param _providerC, provider strategy of tokenC
@@ -170,7 +170,7 @@ abstract contract Tripod {
         address _referenceToken,
         address _pool
     ) internal virtual {
-        require(address(providerA) == address(0), "Joint already initialized");
+        require(address(providerA) == address(0), "tripod already initialized");
         providerA = ProviderStrategy(_providerA);
         providerB = ProviderStrategy(_providerB);
         providerC = ProviderStrategy(_providerC);
@@ -307,7 +307,7 @@ abstract contract Tripod {
         external
         onlyVaultManagers
     {
-        require(_maxPercentageLoss <= RATIO_PRECISION, "To Big");
+        require(_maxPercentageLoss <= RATIO_PRECISION, "too Big");
         maxPercentageLoss = _maxPercentageLoss;
     }
 
@@ -402,7 +402,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available for providers to close the joint position and can then pull funds back
+     *  Function available for providers to close the tripod position and can then pull funds back
      * provider strategy
      */
     function closeAllPositions() external onlyProviders {
@@ -460,7 +460,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function used by keepers to assess whether to harvest the joint and compound generated
+     *  Function used by keepers to assess whether to harvest the tripod and compound generated
      * fees into the existing position
      * @param callCost, call cost parameter
      * @return bool, assessing whether to harvest or not
@@ -513,7 +513,7 @@ abstract contract Tripod {
         return false;
     }
 
-    function getHedgeProfit() public view virtual returns (uint256, uint256);
+    function getHedgeProfit() public view virtual returns (uint256, uint256, uint256);
 
     /*
     * @notice
@@ -674,7 +674,7 @@ abstract contract Tripod {
     
     /*
      * @notice
-     *  Function estimating the current assets in the joint, taking into account:
+     *  Function estimating the current assets in the tripod, taking into account:
      * - current balance of tokens in the LP
      * - pending rewards from the LP (if any)
      * - hedge profit (if any)
@@ -689,13 +689,13 @@ abstract contract Tripod {
         // Current status of tokens in LP (includes potential IL)
         (uint256 _aBalance, uint256 _bBalance, uint256 _cBalance) = balanceOfTokensInLP();
         // Include hedge payoffs
-        (uint256 callProfit, uint256 putProfit) = getHedgeProfit();
+        (uint256 aProfit, uint256 bProfit, uint256 cProfit) = getHedgeProfit();
 
-        // Add remaining balance in joint (if any)
+        // Add remaining balance in tripod (if any)
         unchecked{
-            _aBalance += balanceOfA() + callProfit;
-            _bBalance += balanceOfB() + putProfit;
-            _cBalance += balanceOfC();
+            _aBalance += balanceOfA() + aProfit;
+            _bBalance += balanceOfB() + bProfit;
+            _cBalance += balanceOfC() + cProfit;
         }
 
         // Include rewards (swapping them if not tokenA or tokenB)
@@ -1082,7 +1082,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available internally closing the joint postion:
+     *  Function available internally closing the tripod postion:
      *  - withdraw LPs (if any)
      *  - close hedging position (if any)
      *  - close LP position 
@@ -1134,7 +1134,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly returning the joint's balance of tokenA
+     *  Function available publicly returning the tripod's balance of tokenA
      * @return balance of tokenA 
      */
     function balanceOfA() public view returns (uint256) {
@@ -1143,7 +1143,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly returning the joint's balance of tokenB
+     *  Function available publicly returning the tripod's balance of tokenB
      * @return balance of tokenB
      */
     function balanceOfB() public view returns (uint256) {
@@ -1152,7 +1152,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly returning the joint's balance of tokenC
+     *  Function available publicly returning the tripod's balance of tokenC
      * @return balance of tokenC
      */
     function balanceOfC() public view returns (uint256) {
@@ -1163,7 +1163,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly returning the joint's balance of rewards
+     *  Function available publicly returning the tripod's balance of rewards
      * @return array of balances
      */
     function balanceOfRewardToken() public view returns (uint256[] memory) {
@@ -1189,7 +1189,7 @@ abstract contract Tripod {
     // --- MANAGEMENT FUNCTIONS ---
 	/*
      * @notice
-     *  Function available to vault managers closing the joint position manually
+     *  Function available to vault managers closing the tripod position manually
      *  This will attempt to rebalance properly after withdraw.
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
@@ -1209,7 +1209,7 @@ abstract contract Tripod {
         require(expectedBalanceB <= balanceOfB() - _b, "!sandwiched");
         require(expectedBalanceC <= balanceOfC() - _c, "!sandwiched");
     }
-    
+
     /*
      * @notice
      *  Function available to vault managers returning the funds to the providers manually

@@ -3,7 +3,7 @@ pragma solidity ^0.8.12;
 pragma experimental ABIEncoderV2;
 
 // Import necessary libraries and interfaces:
-// NoHedgeJoint to inherit from
+// NoHedgetripod to inherit from
 import "../Hedges/NoHedgeTripod.sol";
 
 import {ICurveFi} from "../interfaces/Curve/ICurveFi.sol";
@@ -21,11 +21,8 @@ contract CurveV2Tripod is NoHedgeTripod {
     
     // Used for cloning, will automatically be set to false for other clones
     bool public isOriginal = true;
-    // boolean variable deciding wether to swap in uni or use CRV for provider tokens
-    // this can make sense if the pool is unbalanced and price is far from UNI or if the 
-    // liquidity remaining in the pool is not enough for the rebalancing swap the strategy needs
-    bool public useUniRouter;
-    //Router to use for reward swaps and in case of useUnirouter = true
+
+    //Router to use for reward swaps
     address public router;
 
     //The token the Curve pool mints for LP deposits
@@ -57,7 +54,7 @@ contract CurveV2Tripod is NoHedgeTripod {
      * @param _providerB, provider strategy of tokenB
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
-     * @param _pool, Uni V3 pool to LP
+     * @param _pool, pool to LP
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      */
     constructor(
@@ -73,12 +70,12 @@ contract CurveV2Tripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Constructor equivalent for clones, initializing the joint and the specifics of the strat
+     *  Constructor equivalent for clones, initializing the tripod and the specifics of the strat
      * @param _providerA, provider strategy of tokenA
      * @param _providerB, provider strategy of tokenB
 	 * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
-     * @param _pool, Uni V3 pool to LP
+     * @param _pool, pool to LP
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      */
     function initialize(
@@ -95,7 +92,7 @@ contract CurveV2Tripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Initialize CurveTtripod specifics
+     *  Initialize CurveTripod specifics
      * @param _rewardsContract, The Convex rewards contract specific to this LP token
      */
     function _initializeCurveV2Tripod(address _rewardsContract) internal {
@@ -133,9 +130,9 @@ contract CurveV2Tripod is NoHedgeTripod {
      * @param _providerB, provider strategy of tokenB
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
-     * @param _pool, Uni V3 pool to LP
+     * @param _pool, pool to LP
      * @param _rewardsContract The Convex rewards contract specific to this LP token
-     * @return newJoint, address of newly deployed joint
+     * @return newTripod, address of newly deployed tripod
      */
     function cloneCurveV2Tripod(
         address _providerA,
@@ -144,7 +141,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         address _referenceToken,
         address _pool,
         address _rewardsContract
-    ) external returns (address newJoint) {
+    ) external returns (address newTripod) {
         require(isOriginal, "!original");
         bytes20 addressBytes = bytes20(address(this));
 
@@ -160,10 +157,10 @@ contract CurveV2Tripod is NoHedgeTripod {
                 add(clone_code, 0x28),
                 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000
             )
-            newJoint := create(0, clone_code, 0x37)
+            newTripod := create(0, clone_code, 0x37)
         }
 
-        CurveV2Tripod(newJoint).initialize(
+        CurveV2Tripod(newTripod).initialize(
             _providerA,
             _providerB,
             _providerC,
@@ -172,12 +169,12 @@ contract CurveV2Tripod is NoHedgeTripod {
             _rewardsContract
         );
 
-        emit Cloned(newJoint);
+        emit Cloned(newTripod);
     }
 
     /*
      * @notice
-     *  Function returning the name of the joint in the format "NoHedgeUniV3StablesJoint(USDC-DAI)"
+     *  Function returning the name of the tripod in the format "NoHedgeCurveV2Tripod(CurveTokenSymbol)"
      * @return name of the strategy
      */
     function name() external view override returns (string memory) {
@@ -188,16 +185,6 @@ contract CurveV2Tripod is NoHedgeTripod {
         );
 
         return string(abi.encodePacked("NoHedgeCurveV2Tripod(", symbol, ")"));
-    }
-
-    /*
-     * @notice
-     *  Function available for vault managers to set the boolean value deciding wether
-     * to use the uni router for swaps or a CRV pool
-     * @param _useUniRouter, new boolean value to use
-     */
-    function setUseUniRouter(bool _useUniRouter) external onlyVaultManagers {
-        useUniRouter = _useUniRouter;
     }
 
     function updateRewardTokens() internal {
@@ -419,7 +406,7 @@ contract CurveV2Tripod is NoHedgeTripod {
     ) internal override returns (uint256) {
         if(_amountIn < minAmountToSell) return 0;
         
-        // Do NOT use Crv pool
+        //Use Router for rewards
         IUniswapV2Router02 _router = IUniswapV2Router02(router);
 
         uint256 prevBalance = IERC20(_to).balanceOf(address(this));
@@ -441,7 +428,7 @@ contract CurveV2Tripod is NoHedgeTripod {
     /*
      * @notice
      *  Function used internally to swap tokens during rebalancing. Depending on the useCRVPool
-     * state variable it will either use the uni v3 pool to swap or a CRV pool specified in 
+     * state variable it will either use the uniV2Router to swap or a CRV pool specified in 
      * crvPool state variable
      * @param _tokenFrom, adress of token to swap from
      * @param _tokenTo, address of token to swap to
@@ -458,35 +445,19 @@ contract CurveV2Tripod is NoHedgeTripod {
             return 0;
         }
 
-        require(_tokenTo == tokenA || _tokenTo == tokenB || _tokenTo == tokenC, "must be valid token"); 
-        require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid token");
+        require(_tokenTo == tokenA || _tokenTo == tokenB || _tokenTo == tokenC, "must be valid _to"); 
+        require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid _from");
         uint256 prevBalance = IERC20(_tokenTo).balanceOf(address(this));
-        if (useUniRouter) {
-            // Do NOT use Crv pool
-            IUniswapV2Router02 _router = IUniswapV2Router02(router);
-        
-            // Allow necessary amount for CRV pool
-            _checkAllowance(router, IERC20(_tokenFrom), _amountIn);
-            // Perform swap
-            _router.swapExactTokensForTokens(
-                _amountIn,
-                _minOutAmount,
-                getTokenOutPath(_tokenFrom, _tokenTo),
-                address(this),
-                block.timestamp
-            );
 
-        } else {
-            ICurveFi _pool = ICurveFi(pool);
+        ICurveFi _pool = ICurveFi(pool);
         
-            // Perform swap
-            _pool.exchange(
-                index[_tokenFrom], 
-                index[_tokenTo],
-                _amountIn, 
-                _minOutAmount
-            );
-        }
+        // Perform swap
+        _pool.exchange(
+            index[_tokenFrom], 
+            index[_tokenTo],
+            _amountIn, 
+            _minOutAmount
+        );
 
         return IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
     }
@@ -494,8 +465,8 @@ contract CurveV2Tripod is NoHedgeTripod {
     /*
      * @notice
      *  Function used internally to quote a potential rebalancing swap without actually 
-     * executing it. Same as the swap function, will simulate the trade either on the uni
-     * pool or CRV pool based on useUniRouter as well as the tokens being swapped
+     * executing it. Same as the swap function, will simulate the trade either on the UniV2
+     * pool or CRV pool based on the tokens being swapped
      * @param _tokenFrom, adress of token to swap from
      * @param _tokenTo, address of token to swap to
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
@@ -511,17 +482,15 @@ contract CurveV2Tripod is NoHedgeTripod {
         }
 
         require(_tokenTo == tokenA || 
-            _tokenTo == tokenB || 
-                _tokenTo == tokenC, 
-                    "must be valid token"); 
+                    _tokenTo == tokenB || 
+                        _tokenTo == tokenC, 
+                            "must be valid token"); 
 
-        //We should only use curve if from and to is one of the LP tokens AND useUniRouter == false
+        //We should only use curve if _from AND _to is one of the LP tokens
         bool useCurve;
         if(_tokenFrom == tokenA 
             || _tokenFrom == tokenB 
                 || _tokenFrom == tokenC) useCurve = true;
-
-        if(useUniRouter) useCurve = false;
 
         if(!useCurve) {
             // Do NOT use crv pool use V2 router
@@ -607,8 +576,8 @@ contract CurveV2Tripod is NoHedgeTripod {
     /*
      * @notice
      *  Function used by harvest trigger to assess whether to harvest it as
-     * the joint may have gone out of bounds. If debt ratio is kept in the vaults, the joint
-     * re-centers, if debt ratio is 0, the joint is simpley closed and funds are sent back
+     * the tripod may have gone out of bounds. If debt ratio is kept in the vaults, the tripod
+     * re-centers, if debt ratio is 0, the tripod is simpley closed and funds are sent back
      * to each provider
      * @return bool assessing whether to end the epoch or not
      */
