@@ -1000,7 +1000,12 @@ abstract contract Tripod {
         uint256 minAOut, 
         uint256 minBOut, 
         uint256 minCOut
-    ) internal virtual;
+    ) internal virtual {
+        burnLP(_amount);
+        require(minAOut <= balanceOfA(), "!sandwiched");
+        require(minBOut <= balanceOfB(), "!sandwiched");
+        require(minCOut <= balanceOfC(), "!sandwiched");
+    }
 
     function getReward() internal virtual;
 
