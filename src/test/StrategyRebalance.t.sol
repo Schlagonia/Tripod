@@ -48,52 +48,9 @@ contract RebalanceTest is StrategyFixture {
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
-/*
-    function testRebalanceOnLoss(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
 
-        uint256 _a = tripod.invested(address(assetFixtures[0].want));
-        uint256 _b = tripod.invested(address(assetFixtures[1].want));
-        uint256 _c = tripod.invested(address(assetFixtures[2].want));
+g
 
-        skip(2 hours);
-
-        vm.startPrank(gov);
-        tripod.removeLiquidityManually(
-            tripod.totalLpBalance() / 10,
-            _a / 11,
-            _b / 15,
-            _c / 20
-        );
-        vm.stopPrank();
-
-        vm.startPrank(address(tripod));
-        assetFixtures[0].want.safeTransfer(address(gov), tripod.balanceOfA());
-        assetFixtures[1].want.safeTransfer(address(gov), tripod.balanceOfB());
-        assetFixtures[2].want.safeTransfer(address(gov), tripod.balanceOfC());
-        vm.stopPrank();
-        //Turn off health check to allow for loss
-        setProvidersHealthCheck(false);
-        vm.prank(gov);
-        tripod.setMaxPercentageLoss(1e17);
-
-        vm.prank(keeper);
-        tripod.harvest();
-
-        uint256 aRatio = (tripod.invested(address(assetFixtures[0].want)) * 1e18) / _a;
-        uint256 bRatio = (tripod.invested(address(assetFixtures[1].want)) * 1e18) / _b;
-        uint256 cRatio = (tripod.invested(address(assetFixtures[2].want)) * 1e18) / _c;
-      
-        console.log("A ratio ", aRatio);
-        console.log("B ratio ", bRatio);
-        console.log("C ratio ", cRatio);
-
-        assertGt(1e18, aRatio);
-        assertRelApproxEq(aRatio, bRatio, DELTA);
-        assertRelApproxEq(bRatio, cRatio, DELTA);
-    }
-*/
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
