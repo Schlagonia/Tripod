@@ -48,7 +48,7 @@ contract RebalanceTest is StrategyFixture {
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
-/*
+
     function testRebalanceOnLoss(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
@@ -78,22 +78,25 @@ contract RebalanceTest is StrategyFixture {
         vm.prank(gov);
         tripod.setMaxPercentageLoss(1e17);
 
+        vm.prank(gov);
+        tripod.setDontInvestWant(true);
+
         vm.prank(keeper);
         tripod.harvest();
 
-        uint256 aRatio = (tripod.invested(address(assetFixtures[0].want)) * 1e18) / _a;
-        uint256 bRatio = (tripod.invested(address(assetFixtures[1].want)) * 1e18) / _b;
-        uint256 cRatio = (tripod.invested(address(assetFixtures[2].want)) * 1e18) / _c;
+        uint256 aRatio = (assetFixtures[0].strategy.estimatedTotalAssets() * 1e18) / _a;
+        uint256 bRatio = (assetFixtures[1].strategy.estimatedTotalAssets() * 1e18) / _b;
+        uint256 cRatio = (assetFixtures[2].strategy.estimatedTotalAssets() * 1e18) / _c;
       
         console.log("A ratio ", aRatio);
         console.log("B ratio ", bRatio);
         console.log("C ratio ", cRatio);
 
         assertGt(1e18, aRatio);
-        assertRelApproxEq(aRatio, bRatio, DELTA);
-        assertRelApproxEq(bRatio, cRatio, DELTA);
+        assertRelApproxEq(aRatio, bRatio, 10);
+        assertRelApproxEq(bRatio, cRatio, 10);
     }
-*/
+
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
