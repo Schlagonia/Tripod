@@ -68,7 +68,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
 
     function estimatedTotalAssets() public view override returns (uint256) {
         return
-            want.balanceOf(address(this)) +
+            balanceOfWant() +
                 TripodAPI(tripod).estimatedTotalProviderAssets(address(this));
     }
 

@@ -9,14 +9,16 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./interfaces/IERC20Extended.sol";
 
-import {VaultAPI} from "@yearnvaults/contracts/BaseStrategy.sol";
+import {IVault} from "./interfaces/Vault.sol";
 
 interface ProviderStrategy {
-    function vault() external view returns (VaultAPI);
+    function vault() external view returns (IVault);
 
     function keeper() external view returns (address);
 
     function want() external view returns (address);
+
+    function balanceOfWant() external view returns (uint256);
 
     function harvest() external;
 
@@ -72,6 +74,8 @@ abstract contract Tripod {
     uint256 public minAmountToSell;
     uint256 public maxPercentageLoss;
     uint256 public minRewardToHarvest;
+    //Tripod version of maxReportDelay
+    uint256 public maxEpochTime;
 
     // Modifiers needed for access control normally inherited from BaseStrategy 
     modifier onlyGovernance() {
@@ -178,6 +182,7 @@ abstract contract Tripod {
         referenceToken = _referenceToken;
         pool = _pool;
         keeper = msg.sender;
+        maxEpochTime = type(uint256).max;
 
         // NOTE: we let some loss to avoid getting locked in the position if something goes slightly wrong
         maxPercentageLoss = RATIO_PRECISION / 1_000; // 0.10%
@@ -220,21 +225,6 @@ abstract contract Tripod {
             }
         }
         return false;
-    }
-
-    /*
-     * @notice
-     *  Function used in harvestTrigger in providers to decide wether an epoch can be started or not:
-     * - if there is balance of tokens but no position open, return true
-     * @return wether to start a new epoch or not
-     */
-    function shouldStartEpoch() public view returns (bool) {
-        // return true if we have balance of A B and C while the position is closed
-        return
-            (balanceOfA() > 0 && balanceOfB() > 0 && balanceOfC() > 0) &&
-            (invested[tokenA] == 0 &&
-            invested[tokenB] == 0 &&
-            invested[tokenC] == 0);
     }
 
     /* @notice
@@ -284,6 +274,18 @@ abstract contract Tripod {
         onlyVaultManagers
     {
         minAmountToSell = _minAmountToSell;
+    }
+
+    /*
+     * @notice
+     *  Function available for vault managers to set the max time between harvests
+     * @param _maxEpochTime, new value to use
+     */
+    function setMaxEpochTime(uint256 _maxEpochTime)
+        external
+        onlyVaultManagers
+    {
+        maxEpochTime = _maxEpochTime;
     }
 
     /*
@@ -475,10 +477,6 @@ abstract contract Tripod {
             return true;
         }
 
-        if (dontInvestWant) {
-            return true;
-        }
-
         if (shouldStartEpoch()) {
             return true;
         }
@@ -487,7 +485,47 @@ abstract contract Tripod {
             return true;
         }
 
+        //Check if we are past our max time
+        if(block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime) {
+            return true;
+        }
+
         return false;
+    }
+
+    /*
+    * @notice
+    *   function used internally to determine if a provider has funds available to deposit
+    *   Checks the providers want balance of the Tripod, the provider and the credit available to it
+    * @param _provider, the provider to check
+    */  
+    function hasAvailableBalance(ProviderStrategy _provider) 
+        internal 
+        view 
+        returns (bool) 
+    {
+        return 
+            _provider.balanceOfWant() > 0 ||
+                IERC20(_provider.want()).balanceOf(address(this)) > 0 ||
+                    _provider.vault().creditAvailable(address(_provider)) > 0;
+    }
+
+    /*
+     * @notice
+     *  Function used in harvestTrigger in providers to decide wether an epoch can be started or not:
+     * - if there is an available for all three tokens but no position open, return true
+     * @return wether to start a new epoch or not
+     */
+    function shouldStartEpoch() public view returns (bool) {
+        //If we are currently invested return false
+        if(invested[tokenA] != 0 ||
+            invested[tokenB] != 0 || 
+                invested[tokenC] != 0) return false;
+
+        return
+            hasAvailableBalance(providerA) && 
+                hasAvailableBalance(providerB) && 
+                    hasAvailableBalance(providerC);
     }
 
     /*

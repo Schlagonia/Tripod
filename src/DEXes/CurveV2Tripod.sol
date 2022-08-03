@@ -22,8 +22,14 @@ contract CurveV2Tripod is NoHedgeTripod {
     // Used for cloning, will automatically be set to false for other clones
     bool public isOriginal = true;
 
-    //Router to use for reward swaps
-    address public router;
+    //Routers to use for reward swaps
+    address internal constant sushiRouter =
+        0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F;
+    address internal constant uniRouter =
+        0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+
+    // Use sushi router due to higher liquidity for CVX
+    address public router = sushiRouter;
 
     //The token the Curve pool mints for LP deposits
     address public poolToken;
@@ -104,15 +110,12 @@ contract CurveV2Tripod is NoHedgeTripod {
 
         // The reward tokens are the tokens provided to the pool
         //This will update them based on current rewards on convex
-        updateRewardTokens();
+        _updateRewardTokens();
 
         //Use _getCrvPoolIndex to set mappings of index's
         index[tokenA] = _getCRVPoolIndex(tokenA); 
         index[tokenB] = _getCRVPoolIndex(tokenB);
         index[tokenC] = _getCRVPoolIndex(tokenC);
-
-        // Use sushi router due to higher liquidity for CVX
-        router = address(0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F);
 
         maxApprove(tokenA, pool);
         maxApprove(tokenB, pool);
@@ -187,7 +190,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         return string(abi.encodePacked("NoHedgeCurveV2Tripod(", symbol, ")"));
     }
 
-    function updateRewardTokens() internal {
+    function _updateRewardTokens() internal {
         delete rewardTokens; //empty the rewardsTokens and rebuild
 
         //We know we will be getting curve and convex at least
@@ -257,9 +260,9 @@ contract CurveV2Tripod is NoHedgeTripod {
      *  Function returning the amount of rewards earned until now
      * @return uint256 array of amounts of expected rewards earned
      */
-    function pendingRewards() public view override returns (uint256[] memory _amountPending) {
+    function pendingRewards() public view override returns (uint256[] memory) {
         // Initialize the array to same length as reward tokens
-        _amountPending = new uint256[](rewardTokens.length);
+        uint256[] memory _amountPending = new uint256[](rewardTokens.length);
 
         //Save the earned CrV rewards to 0 where crv will be
         _amountPending[0] = 
@@ -276,6 +279,7 @@ contract CurveV2Tripod is NoHedgeTripod {
                 IConvexRewards(virtualRewardsPool).earned(address(this)) + 
                     IERC20(rewardTokens[i+2]).balanceOf(address(this));
         }
+        return _amountPending;
     }
 
     /*
@@ -587,6 +591,8 @@ contract CurveV2Tripod is NoHedgeTripod {
     * @notice 
     *  To be called inbetween harvests if applicable
     *  This will claim and sell rewards and create an LP with all available funds
+    *  This will not adjust invested amounts, since it is all profit and is likely to be
+    *       denominated in one token used to swap to i.e. WETH
     */
     function tend() external override onlyKeepers {
         //Claim all outstanding rewards
@@ -594,15 +600,9 @@ contract CurveV2Tripod is NoHedgeTripod {
         //Swap out of all Reward Tokens
         swapRewardTokens();
         //Create LP tokens
-        (uint256 aDeposited, uint256 bDeposited, uint256 cDeposited) = createLP();
+        createLP();
         //Stake LP tokens
         depositLP();
-        //add to invested Amounts
-        unchecked {
-            invested[tokenA] += aDeposited;
-            invested[tokenB] += bDeposited;
-            invested[tokenC] += cDeposited;
-        }
     }
 
     /*
@@ -632,6 +632,32 @@ contract CurveV2Tripod is NoHedgeTripod {
         }
 
         return false;
+    }
+
+    /*
+    * @notice
+    *   External function for management to call that updates our rewardTokens array
+    *   Should be called if the convex contract adds or removes any extra rewards
+    */
+    function updateRewardTokens() external onlyVaultManagers {
+        _updateRewardTokens();
+    }
+
+    /*
+    * @notice 
+    *   Function available from management to change wether or not we harvest extra rewards
+    * @param _harvestExtras, bool of new harvestExtras status
+    */
+    function setHarvestExtras(bool _harvestExtras) external onlyVaultManagers {
+        harvestExtras = _harvestExtras;
+    }
+
+    /*
+    * @notice
+    *   Function available to management to change which UniV2 router we are using
+    */
+    function changeRouter() external onlyVaultManagers {
+        router = router == sushiRouter ? uniRouter : sushiRouter;
     }
 
         /*

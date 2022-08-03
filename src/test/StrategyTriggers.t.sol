@@ -21,29 +21,48 @@ contract StrategyTriggerTest is StrategyFixture {
 
     function testHarvestTrigger(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
+        depositAllVaults(_amount);
 
         vm.prank(address(0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7));
         IBaseFee(0xb5e1CAcB567d98faaDB60a1fD4820720141f064F).setMaxAcceptableBaseFee(1e18);
+        skip(1);
 
-        //Nothings happened should be false
+        //Providers have credit available so it should harvest
+        assertTrue(tripod.harvestTrigger(1), "Check 0");
+
+        vm.prank(address(0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7));
+        IBaseFee(0xb5e1CAcB567d98faaDB60a1fD4820720141f064F).setMaxAcceptableBaseFee(1);
+        skip(1);
+
+        //Base fee should make it false
         assertTrue(!tripod.harvestTrigger(1), "Check 1");
 
-        vm.prank(gov);
-        tripod.setDontInvestWant(true);
+        vm.prank(address(0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7));
+        IBaseFee(0xb5e1CAcB567d98faaDB60a1fD4820720141f064F).setMaxAcceptableBaseFee(1e18);
+        skip(1);
 
-        assertTrue(tripod.harvestTrigger(1), "Check 2");
+        vm.prank(keeper);
+        tripod.harvest();
 
-        vm.prank(gov);
-        tripod.setDontInvestWant(false);
-
-        assertTrue(!tripod.harvestTrigger(1), "Check 3");
+        assertTrue(!tripod.harvestTrigger(1), "Check 2");
+        skip(1);
 
         vm.prank(gov);
         tripod.setLaunchHarvest(true);
 
-        assertTrue(tripod.harvestTrigger(3), "check 4");
+        assertTrue(tripod.harvestTrigger(3), "check 3");
+        
+        vm.prank(gov);
+        tripod.setLaunchHarvest(false);
+        skip(1);
 
+        assertTrue(!tripod.harvestTrigger(1), "Check 4");
+
+        vm.prank(gov);
+        tripod.setMaxEpochTime(1 days);
+        skip(tripod.maxEpochTime() + 1);
+
+        assertTrue(tripod.harvestTrigger(3), "check 5");
     }
 
     function testTendTrigger(uint256 _amount) public {
@@ -98,7 +117,7 @@ contract StrategyTriggerTest is StrategyFixture {
                     tokenTo = tripod.tokenC();
                 }
         }
-        uint256 beforeBal = tripod.invested(tokenTo);
+        
         uint256 stakedBalance = tripod.balanceOfStake();
 
         skip(1 days);
@@ -111,6 +130,5 @@ contract StrategyTriggerTest is StrategyFixture {
         assertEq(IERC20(cvx).balanceOf(address(tripod)), 0, "CVX balance");
         assertEq(IERC20(crv).balanceOf(address(tripod)), 0, "Curve balance");
         assertGt(tripod.balanceOfStake(), stakedBalance, "Staked bal");
-        assertGt(tripod.invested(tokenTo), beforeBal, "invested balance");
     }
 }

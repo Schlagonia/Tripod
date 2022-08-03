@@ -49,8 +49,6 @@ contract RebalanceTest is StrategyFixture {
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
 
-g
-
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
