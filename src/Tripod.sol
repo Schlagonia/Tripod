@@ -315,6 +315,17 @@ abstract contract Tripod {
 
     /*
     * @notice
+    * External function for vault managers to set launchHarvest
+    */
+    function setLaunchHarvest(bool _newLaunchHarvest) 
+        external 
+        onlyVaultManagers 
+    {
+        launchHarvest = _newLaunchHarvest;
+    }
+
+    /*
+    * @notice
     *   External Functions for the keepers to call
     *   Will exit all positions and sell all rewards applicable attempting to rebalance profits
     *   Will then call the harvest function on each Provider to avoid redundant harvests
@@ -453,14 +464,6 @@ abstract contract Tripod {
     }
 
     /*
-    * @notice
-    * External function for vault managers to set launchHarvest
-    */
-    function setLaunchHarvest(bool _newLaunchHarvest) external onlyVaultManagers {
-        launchHarvest = _newLaunchHarvest;
-    }
-
-    /*
      * @notice
      *  Function used by keepers to assess whether to harvest the tripod and compound generated
      * fees into the existing position
@@ -521,6 +524,8 @@ abstract contract Tripod {
         if(invested[tokenA] != 0 ||
             invested[tokenB] != 0 || 
                 invested[tokenC] != 0) return false;
+        
+        if(dontInvestWant) return false;
 
         return
             hasAvailableBalance(providerA) && 
@@ -772,7 +777,7 @@ abstract contract Tripod {
     /*
     * @notice 
     *    This function is a fucking disaster.
-    *    But it wokks...
+    *    But it works...
     */
     function quoteRebalance(
         uint256 startingA,
