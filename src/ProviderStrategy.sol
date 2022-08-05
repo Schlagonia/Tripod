@@ -18,6 +18,8 @@ interface TripodAPI {
 
     function providerC() external view returns (address);
 
+    function invested(address) external view returns(uint256);
+
     function estimatedTotalProviderAssets(address provider)
         external
         view
@@ -66,7 +68,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
 
     function estimatedTotalAssets() public view override returns (uint256) {
         return
-            want.balanceOf(address(this)) +
+            balanceOfWant() +
                 TripodAPI(tripod).estimatedTotalProviderAssets(address(this));
     }
 
@@ -83,9 +85,13 @@ contract ProviderStrategy is BaseStrategyInitializable {
             uint256 _debtPayment
         )
     {
-        // NOTE: Harvests are all done throught the joint/Tripod contract
-        // The Joint will always close the position to realize profits then call harvest here 
-        // After the positions are closed all funds are kept at the joint and can be pulled if needed
+        // NOTE: Harvests are all done throught the Tripod contract
+        // The tripod will always close the position to realize profits then call harvest here 
+        // After the positions are closed all funds are kept at the tripod and can be pulled if needed
+        
+        //Assure we are not invested
+        require(TripodAPI(tripod).invested(address(want)) == 0, "Open Position");
+
         uint256 amountAvailable = balanceOfWant();
         uint256 amountAtTripod = want.balanceOf(tripod);
         uint256 _totalDebt = totalDebt();
@@ -139,7 +145,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
     }
 
     function dontInvestWant() public view returns (bool) {
-        // Delegating decision to joint
+        // Delegating decision to tripod
         return TripodAPI(tripod).dontInvestWant();
     }
 
@@ -163,6 +169,8 @@ contract ProviderStrategy is BaseStrategyInitializable {
     {
         uint256 availableAssets = balanceOfWant();
         if (_amountNeeded > availableAssets) {
+            //Make sure we aren't reporting incorrect loss
+            require(TripodAPI(tripod).invested(address(want)) == 0, "Open Position");
             _liquidatedAmount = availableAssets;
             _loss = _amountNeeded - availableAssets;
         } else {
@@ -186,7 +194,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
         return want.balanceOf(address(this));
     }
 
-    function setJoint(address _tripod) external onlyGovernance {
+    function setTripod(address _tripod) external onlyGovernance {
         require(
             TripodAPI(_tripod).providerA() == address(this) ||
                 TripodAPI(_tripod).providerB() == address(this) ||
@@ -207,7 +215,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
     {
         //Closes any open positions and sets DontInvestWant == true
         TripodAPI(tripod).closeAllPositions();
-        
+
 	    uint256 amount = want.balanceOf(tripod);
         if (amount > 0) {
             want.safeTransferFrom(tripod, address(this), amount);
@@ -222,7 +230,7 @@ contract ProviderStrategy is BaseStrategyInitializable {
         override
         returns (uint256)
     {
-        // NOTE: using joint params to avoid changing fixed values for other chains
+        // NOTE: using tripod params to avoid changing fixed values for other chains
         // gas price is not important as this will only be used in triggers (queried from off-chain)
         return _amtInWei;
     }

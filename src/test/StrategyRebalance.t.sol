@@ -167,6 +167,10 @@ contract RebalanceTest is StrategyFixture {
             _c
         );
 
+        console.log("A ratio ", aRatio);
+        console.log("B ratio ", bRatio);
+        console.log("C ratio ", cRatio);
+
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }

@@ -94,6 +94,8 @@ interface IVault is IERC20 {
      */
     function creditAvailable() external view returns (uint256);
 
+    function creditAvailable(address strategy) external view returns (uint256);
+
     /**
      * View how much the Vault would like to pull back from the Strategy,
      * based on its present performance (since its last report). Can be used to

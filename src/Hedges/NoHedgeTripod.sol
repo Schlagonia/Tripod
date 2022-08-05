@@ -26,8 +26,8 @@ abstract contract NoHedgeTripod is Tripod {
         return 0;
     }
 
-    function getHedgeProfit() public pure override returns (uint256, uint256) {
-        return (0, 0);
+    function getHedgeProfit() public pure override returns (uint256, uint256, uint256) {
+        return (0, 0, 0);
     }
 
     function hedgeLP()

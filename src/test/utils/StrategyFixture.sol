@@ -191,7 +191,7 @@ contract StrategyFixture is ExtendedTest {
             ProviderStrategy _provider = assetFixtures[i].strategy;
 
             vm.startPrank(gov);
-            _provider.setJoint(address(tripod));
+            _provider.setTripod(address(tripod));
             vm.stopPrank();
         }
     }

@@ -45,7 +45,7 @@ contract StrategyMigrationTest is StrategyFixture {
             poolUsing.rewardsContract
         );
 
-        vm.expectRevert(bytes("Joint already initialized"));
+        vm.expectRevert(bytes("tripod already initialized"));
 
         _newTripod.initialize(
             address(assetFixtures[0].strategy),
@@ -100,7 +100,7 @@ contract StrategyMigrationTest is StrategyFixture {
             //newProvider.setHealthCheck(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
 
             vm.prank(gov);
-            newProvider.setJoint(address(tripod));
+            newProvider.setTripod(address(tripod));
 
             //Make sure all funds got moved
             assertEq(_want.balanceOf(address(_provider)), 0, "Old provider");

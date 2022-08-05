@@ -9,14 +9,16 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./interfaces/IERC20Extended.sol";
 
-import {VaultAPI} from "@yearnvaults/contracts/BaseStrategy.sol";
+import {IVault} from "./interfaces/Vault.sol";
 
 interface ProviderStrategy {
-    function vault() external view returns (VaultAPI);
+    function vault() external view returns (IVault);
 
     function keeper() external view returns (address);
 
     function want() external view returns (address);
+
+    function balanceOfWant() external view returns (uint256);
 
     function harvest() external;
 
@@ -36,7 +38,7 @@ abstract contract Tripod {
     ProviderStrategy public providerA;
     // Provider strategy of tokenB
     ProviderStrategy public providerB;
-    // Provider strategy of TokenC
+    // Provider strategy of tokenC
     ProviderStrategy public providerC;
 
     // Address of tokenA
@@ -72,6 +74,8 @@ abstract contract Tripod {
     uint256 public minAmountToSell;
     uint256 public maxPercentageLoss;
     uint256 public minRewardToHarvest;
+    //Tripod version of maxReportDelay
+    uint256 public maxEpochTime;
 
     // Modifiers needed for access control normally inherited from BaseStrategy 
     modifier onlyGovernance() {
@@ -156,7 +160,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Constructor equivalent for clones, initializing the joint and the specifics of UniV3Joint
+     *  Constructor equivalent for clones, initializing the tripod
      * @param _providerA, provider strategy of tokenA
      * @param _providerB, provider strategy of tokenB
      * @param _providerC, provider strategy of tokenC
@@ -170,7 +174,7 @@ abstract contract Tripod {
         address _referenceToken,
         address _pool
     ) internal virtual {
-        require(address(providerA) == address(0), "Joint already initialized");
+        require(address(providerA) == address(0), "tripod already initialized");
         providerA = ProviderStrategy(_providerA);
         providerB = ProviderStrategy(_providerB);
         providerC = ProviderStrategy(_providerC);
@@ -178,6 +182,7 @@ abstract contract Tripod {
         referenceToken = _referenceToken;
         pool = _pool;
         keeper = msg.sender;
+        maxEpochTime = type(uint256).max;
 
         // NOTE: we let some loss to avoid getting locked in the position if something goes slightly wrong
         maxPercentageLoss = RATIO_PRECISION / 1_000; // 0.10%
@@ -220,21 +225,6 @@ abstract contract Tripod {
             }
         }
         return false;
-    }
-
-    /*
-     * @notice
-     *  Function used in harvestTrigger in providers to decide wether an epoch can be started or not:
-     * - if there is balance of tokens but no position open, return true
-     * @return wether to start a new epoch or not
-     */
-    function shouldStartEpoch() public view returns (bool) {
-        // return true if we have balance of A B and C while the position is closed
-        return
-            (balanceOfA() > 0 && balanceOfB() > 0 && balanceOfC() > 0) &&
-            (invested[tokenA] == 0 &&
-            invested[tokenB] == 0 &&
-            invested[tokenC] == 0);
     }
 
     /* @notice
@@ -288,6 +278,18 @@ abstract contract Tripod {
 
     /*
      * @notice
+     *  Function available for vault managers to set the max time between harvests
+     * @param _maxEpochTime, new value to use
+     */
+    function setMaxEpochTime(uint256 _maxEpochTime)
+        external
+        onlyVaultManagers
+    {
+        maxEpochTime = _maxEpochTime;
+    }
+
+    /*
+     * @notice
      *  Function available for vault managers to set the auto protection
      * @param _autoProtectionDisabled, new value to use
      */
@@ -307,8 +309,19 @@ abstract contract Tripod {
         external
         onlyVaultManagers
     {
-        require(_maxPercentageLoss <= RATIO_PRECISION, "To Big");
+        require(_maxPercentageLoss <= RATIO_PRECISION, "too Big");
         maxPercentageLoss = _maxPercentageLoss;
+    }
+
+    /*
+    * @notice
+    * External function for vault managers to set launchHarvest
+    */
+    function setLaunchHarvest(bool _newLaunchHarvest) 
+        external 
+        onlyVaultManagers 
+    {
+        launchHarvest = _newLaunchHarvest;
     }
 
     /*
@@ -402,7 +415,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available for providers to close the joint position and can then pull funds back
+     *  Function available for providers to close the tripod position and can then pull funds back
      * provider strategy
      */
     function closeAllPositions() external onlyProviders {
@@ -451,16 +464,8 @@ abstract contract Tripod {
     }
 
     /*
-    * @notice
-    * External function for vault managers to set launchHarvest
-    */
-    function setLaunchHarvest(bool _newLaunchHarvest) external onlyVaultManagers {
-        launchHarvest = _newLaunchHarvest;
-    }
-
-    /*
      * @notice
-     *  Function used by keepers to assess whether to harvest the joint and compound generated
+     *  Function used by keepers to assess whether to harvest the tripod and compound generated
      * fees into the existing position
      * @param callCost, call cost parameter
      * @return bool, assessing whether to harvest or not
@@ -475,10 +480,6 @@ abstract contract Tripod {
             return true;
         }
 
-        if (dontInvestWant) {
-            return true;
-        }
-
         if (shouldStartEpoch()) {
             return true;
         }
@@ -487,7 +488,49 @@ abstract contract Tripod {
             return true;
         }
 
+        //Check if we are past our max time
+        if(block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime) {
+            return true;
+        }
+
         return false;
+    }
+
+    /*
+    * @notice
+    *   function used internally to determine if a provider has funds available to deposit
+    *   Checks the providers want balance of the Tripod, the provider and the credit available to it
+    * @param _provider, the provider to check
+    */  
+    function hasAvailableBalance(ProviderStrategy _provider) 
+        internal 
+        view 
+        returns (bool) 
+    {
+        return 
+            _provider.balanceOfWant() > 0 ||
+                IERC20(_provider.want()).balanceOf(address(this)) > 0 ||
+                    _provider.vault().creditAvailable(address(_provider)) > 0;
+    }
+
+    /*
+     * @notice
+     *  Function used in harvestTrigger in providers to decide wether an epoch can be started or not:
+     * - if there is an available for all three tokens but no position open, return true
+     * @return wether to start a new epoch or not
+     */
+    function shouldStartEpoch() public view returns (bool) {
+        //If we are currently invested return false
+        if(invested[tokenA] != 0 ||
+            invested[tokenB] != 0 || 
+                invested[tokenC] != 0) return false;
+        
+        if(dontInvestWant) return false;
+
+        return
+            hasAvailableBalance(providerA) && 
+                hasAvailableBalance(providerB) && 
+                    hasAvailableBalance(providerC);
     }
 
     /*
@@ -513,7 +556,7 @@ abstract contract Tripod {
         return false;
     }
 
-    function getHedgeProfit() public view virtual returns (uint256, uint256);
+    function getHedgeProfit() public view virtual returns (uint256, uint256, uint256);
 
     /*
     * @notice
@@ -674,7 +717,7 @@ abstract contract Tripod {
     
     /*
      * @notice
-     *  Function estimating the current assets in the joint, taking into account:
+     *  Function estimating the current assets in the tripod, taking into account:
      * - current balance of tokens in the LP
      * - pending rewards from the LP (if any)
      * - hedge profit (if any)
@@ -689,13 +732,13 @@ abstract contract Tripod {
         // Current status of tokens in LP (includes potential IL)
         (uint256 _aBalance, uint256 _bBalance, uint256 _cBalance) = balanceOfTokensInLP();
         // Include hedge payoffs
-        (uint256 callProfit, uint256 putProfit) = getHedgeProfit();
+        (uint256 aProfit, uint256 bProfit, uint256 cProfit) = getHedgeProfit();
 
-        // Add remaining balance in joint (if any)
+        // Add remaining balance in tripod (if any)
         unchecked{
-            _aBalance += balanceOfA() + callProfit;
-            _bBalance += balanceOfB() + putProfit;
-            _cBalance += balanceOfC();
+            _aBalance += balanceOfA() + aProfit;
+            _bBalance += balanceOfB() + bProfit;
+            _cBalance += balanceOfC() + cProfit;
         }
 
         // Include rewards (swapping them if not tokenA or tokenB)
@@ -734,7 +777,7 @@ abstract contract Tripod {
     /*
     * @notice 
     *    This function is a fucking disaster.
-    *    But it wokks...
+    *    But it works...
     */
     function quoteRebalance(
         uint256 startingA,
@@ -976,14 +1019,36 @@ abstract contract Tripod {
 
     function createLP() internal virtual returns (uint256, uint256, uint256);
 
-    function burnLP(uint256 amount) internal virtual;
+    /*
+     * @notice
+     *  Function used internally to close the LP position: 
+     *      - burns the LP liquidity specified amount, all mins are 0
+     * @param amount, amount of liquidity to burn
+     */
+    function burnLP(uint256 _amount) internal virtual;
 
+    /*
+     * @notice
+     *  Function used internally to close the LP position: 
+     *      - burns the LP liquidity specified amount
+     *      - Assures that the min is received
+     *  
+     * @param amount, amount of liquidity to burn
+     * @param minAOut, the min amount of Token A we should receive
+     * @param minBOut, the min amount of Token B we should recieve
+     * @param minCout, the min amount of Token C we should recieve
+     */
     function burnLP(
-        uint256 amount, 
+        uint256 _amount,
         uint256 minAOut, 
         uint256 minBOut, 
         uint256 minCOut
-    ) internal virtual;
+    ) internal virtual {
+        burnLP(_amount);
+        require(minAOut <= balanceOfA(), "!sandwiched");
+        require(minBOut <= balanceOfB(), "!sandwiched");
+        require(minCOut <= balanceOfC(), "!sandwiched");
+    }
 
     function getReward() internal virtual;
 
@@ -1065,7 +1130,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available internally closing the joint postion:
+     *  Function available internally closing the tripod postion:
      *  - withdraw LPs (if any)
      *  - close hedging position (if any)
      *  - close LP position 
@@ -1117,7 +1182,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly returning the joint's balance of tokenA
+     *  Function available publicly returning the tripod's balance of tokenA
      * @return balance of tokenA 
      */
     function balanceOfA() public view returns (uint256) {
@@ -1126,7 +1191,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly returning the joint's balance of tokenB
+     *  Function available publicly returning the tripod's balance of tokenB
      * @return balance of tokenB
      */
     function balanceOfB() public view returns (uint256) {
@@ -1135,7 +1200,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly returning the joint's balance of tokenC
+     *  Function available publicly returning the tripod's balance of tokenC
      * @return balance of tokenC
      */
     function balanceOfC() public view returns (uint256) {
@@ -1146,7 +1211,7 @@ abstract contract Tripod {
 
     /*
      * @notice
-     *  Function available publicly returning the joint's balance of rewards
+     *  Function available publicly returning the tripod's balance of rewards
      * @return array of balances
      */
     function balanceOfRewardToken() public view returns (uint256[] memory) {
@@ -1170,9 +1235,9 @@ abstract contract Tripod {
     function pendingRewards() public view virtual returns (uint256[] memory);
 
     // --- MANAGEMENT FUNCTIONS ---
-    /*
+	/*
      * @notice
-     *  Function available to vault managers closing the joint position manually
+     *  Function available to vault managers closing the tripod position manually
      *  This will attempt to rebalance properly after withdraw.
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
