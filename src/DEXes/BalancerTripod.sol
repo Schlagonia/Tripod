@@ -6,7 +6,9 @@ pragma experimental ABIEncoderV2;
 // NoHedgetripod to inherit from
 import "../Hedges/NoHedgeTripod.sol";
 
-import {ICurveFi} from "../interfaces/Curve/ICurveFi.sol";
+import { IBalancerVault } from "../interfaces/Balancer/IBalancerVault.sol";
+import { IBalancerPool } from "../interfaces/Balancer/IBalancerPool.sol";
+import { IAsset } from "../interfaces/Balancer/IAsset.sol";
 import {IUniswapV2Router02} from "../interfaces/uniswap/V2/IUniswapV2Router02.sol";
 import {IConvexDeposit} from "../interfaces/Convex/IConvexDeposit.sol";
 import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
@@ -14,7 +16,8 @@ import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
-contract CurveV2Tripod is NoHedgeTripod {
+//Pool 0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2
+contract BalancerTripod is NoHedgeTripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using SafeCast for int256;
@@ -27,31 +30,40 @@ contract CurveV2Tripod is NoHedgeTripod {
         0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F;
     address internal constant uniRouter =
         0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
-
     // Use sushi router due to higher liquidity for CVX
     address public router = sushiRouter;
 
-    //The token the Curve pool mints for LP deposits
-    address public poolToken;
-    //Index mapping provider token to its crv index 
-    mapping (address => uint256) private index;
+    //Curve 3 Pool for easy quoting of stable coin swaps
+    ICurveFi internal constant curvePool =
+        ICurveFi(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
 
+    /***
+        Balancer specific variables
+    ***/
+    //The main Balancer vault
+    IBalancerVault internal constant balancervault = 
+        IBalancerVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
+    //The specific Balancer Pool Id
+    bytes32 internal poolId;
+
+    /***
+        Aura specific variables for staking
+    ***/
     //Convex contracts for staking and rewwards
     IConvexDeposit public constant depositContract = 
-        IConvexDeposit(0xF403C135812408BFbE8713b5A23a04b3D48AAE31);
+        IConvexDeposit(0x7818A1DA7BD1E64c199029E86Ba244a9798eEE10);
     //Specific for each LP token
-    IConvexRewards public rewardsContract;
-    
+    IConvexRewards public rewardsContract; 
     // this is unique to each pool
     uint256 public pid; 
     //If we chould claim extras on harvests
     bool public harvestExtras = true; 
 
     //Base Reward Tokens
-    address internal constant convexToken = 
-        address(0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B);
-    address internal constant crvToken =
-        address(0xD533a949740bb3306d119CC777fa900bA034cd52);
+    address internal constant auraToken = 
+        address(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
+    address internal constant balToken =
+        address(0xba100000625a3754423978a60c9317c58a424e3D);
 
     /*
      * @notice
@@ -71,7 +83,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         address _pool,
         address _rewardsContract
     ) NoHedgeTripod(_providerA, _providerB, _providerC, _referenceToken, _pool) {
-        _initializeCurveV2Tripod(_rewardsContract);
+        _initializeBalancerTripod(_rewardsContract);
     }
 
     /*
@@ -93,7 +105,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         address _rewardsContract
     ) external {
         _initialize(_providerA, _providerB, _providerC, _referenceToken, _pool);
-        _initializeCurveV2Tripod(_rewardsContract);
+        _initializeBalancerTripod(_rewardsContract);
     }
 
     /*
@@ -101,27 +113,21 @@ contract CurveV2Tripod is NoHedgeTripod {
      *  Initialize CurveTripod specifics
      * @param _rewardsContract, The Convex rewards contract specific to this LP token
      */
-    function _initializeCurveV2Tripod(address _rewardsContract) internal {
+    function _initializeBalancerTripod(address _rewardsContract) internal {
         rewardsContract = IConvexRewards(_rewardsContract);
-        //Get the token we will be using
-        poolToken = ICurveFi(pool).token();
         //UPdate the PID for the rewards pool
         pid = rewardsContract.pid();
+
+        poolId = IBalancerPool(pool).getPoolId();
 
         // The reward tokens are the tokens provided to the pool
         //This will update them based on current rewards on convex
         _updateRewardTokens();
 
-        //Use _getCrvPoolIndex to set mappings of index's
-        index[tokenA] = _getCRVPoolIndex(tokenA); 
-        index[tokenB] = _getCRVPoolIndex(tokenB);
-        index[tokenC] = _getCRVPoolIndex(tokenC);
-
         maxApprove(tokenA, pool);
         maxApprove(tokenB, pool);
         maxApprove(tokenC, pool);
-        maxApprove(poolToken, pool);
-        maxApprove(poolToken, address(depositContract));
+        maxApprove(pool, address(depositContract));
     }
 
     event Cloned(address indexed clone);
@@ -137,7 +143,7 @@ contract CurveV2Tripod is NoHedgeTripod {
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      * @return newTripod, address of newly deployed tripod
      */
-    function cloneCurveV2Tripod(
+    function cloneBalancerTripod(
         address _providerA,
         address _providerB,
         address _providerC,
@@ -163,7 +169,7 @@ contract CurveV2Tripod is NoHedgeTripod {
             newTripod := create(0, clone_code, 0x37)
         }
 
-        CurveV2Tripod(newTripod).initialize(
+        BalancerTripod(newTripod).initialize(
             _providerA,
             _providerB,
             _providerC,
@@ -177,7 +183,7 @@ contract CurveV2Tripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Function returning the name of the tripod in the format "NoHedgeCurveV2Tripod(CurveTokenSymbol)"
+     *  Function returning the name of the tripod in the format "NoHedgeBalancerTripod(CurveTokenSymbol)"
      * @return name of the strategy
      */
     function name() external view override returns (string memory) {
@@ -187,15 +193,15 @@ contract CurveV2Tripod is NoHedgeTripod {
             )
         );
 
-        return string(abi.encodePacked("NoHedgeCurveV2Tripod(", symbol, ")"));
+        return string(abi.encodePacked("NoHedgeBalancerTripod(", symbol, ")"));
     }
 
     function _updateRewardTokens() internal {
         delete rewardTokens; //empty the rewardsTokens and rebuild
 
         //We know we will be getting curve and convex at least
-        rewardTokens.push(crvToken);
-        rewardTokens.push(convexToken);
+        rewardTokens.push(balToken);
+        rewardTokens.push(auraToken);
 
         for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
             address virtualRewardsPool = rewardsContract.extraRewards(i);
@@ -247,12 +253,18 @@ contract CurveV2Tripod is NoHedgeTripod {
         uint256 lpBalance = totalLpBalance();
         if(lpBalance == 0) return (0, 0, 0);
 
-        ICurveFi _pool = ICurveFi(pool);
-        // use calc_Withdrawone_coin for a third of each
-        uint256 third = lpBalance * 3_333 / 10_000;
-        _balanceA = _pool.calc_withdraw_one_coin(third, index[tokenA]);
-        _balanceB = _pool.calc_withdraw_one_coin(third, index[tokenB]);
-        _balanceC = _pool.calc_withdraw_one_coin(third, index[tokenC]);
+        //get the virtual price .getRate()
+        uint256 virtualPrice = IBalancerPool(pool).getRate();
+
+        //Calculate vp -> dollars
+        uint256 lpDollarValue = lpBalance * virtualPrice / IERC20Extended(pool).decimals();
+
+        //div by 3
+        uint256 third = lpDollarValue * 3_333 / 10_000;
+
+        //Probably want to get an oracle price and use that to calulatete the percent
+
+        return(third, third, third);
     }
 
     /*
@@ -267,9 +279,9 @@ contract CurveV2Tripod is NoHedgeTripod {
         //Save the earned CrV rewards to 0 where crv will be
         _amountPending[0] = 
             rewardsContract.earned(address(this)) + 
-                IERC20(crvToken).balanceOf(address(this));
+                IERC20(balToken).balanceOf(address(this));
         //Just place current balance for convex, avoids complex math and underestimates rewards for safety
-        _amountPending[1] = IERC20(convexToken).balanceOf(address(this));
+        _amountPending[1] = IERC20(auraToken).balanceOf(address(this));
 
         //We skipped the first two of the rewards list
         for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
@@ -301,14 +313,43 @@ contract CurveV2Tripod is NoHedgeTripod {
         uint256 _bBalance = balanceOfB();
         uint256 _cBalance = balanceOfC();
 
-        uint256[3] memory amounts;
-        amounts[index[tokenA]] = _aBalance;
-        amounts[index[tokenB]] = _bBalance;
-        amounts[index[tokenC]] = _cBalance;
+        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](1);
 
-        ICurveFi(pool).add_liquidity(
-            amounts, 
-            0
+        swaps[0] = IBalancerVault.BatchSwapStep(
+                poolId,
+                0,
+                1,
+                wethBalance,
+                abi.encode(0)
+            );
+
+        //Match the token address with the desired index for this trade
+        IAsset[] memory assets = new IAsset[](3);
+        assets[0] = IAsset(address(weth));
+        assets[1] = IAsset(usdc);
+        assets[2] = IAsset(address(vst));
+
+        //Create this contract as the fund manager
+        //Set "use internal balance" vars to false since it is a traditional swap
+        IBalancerVault.FundManagement memory fundManagement =
+            IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            );
+        
+        //Only min we need to set is for the Weth balance going in
+        int[] memory limits = new int[](3);
+        limits[0] = int(wethBalance);
+            
+        balancerVault.batchSwap(
+            IBalancerVault.SwapKind.GIVEN_IN, 
+            swaps, 
+            assets, 
+            fundManagement, 
+            limits, 
+            block.timestamp
         );
 
         unchecked {
@@ -330,11 +371,43 @@ contract CurveV2Tripod is NoHedgeTripod {
         uint256 _amount
     ) internal override {
 
-        uint256[3] memory amounts;
+        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](1);
 
-        ICurveFi(pool).remove_liquidity(
-            _amount, 
-            amounts
+        swaps[0] = IBalancerVault.BatchSwapStep(
+                poolId,
+                0,
+                1,
+                _amount,
+                abi.encode(0)
+            );
+
+        //Match the token address with the desired index for this trade
+        IAsset[] memory assets = new IAsset[](3);
+        assets[0] = IAsset(pool);
+        assets[1] = IAsset(usdc);
+        assets[2] = IAsset(address(vst));
+
+        //Create this contract as the fund manager
+        //Set "use internal balance" vars to false since it is a traditional swap
+        IBalancerVault.FundManagement memory fundManagement =
+            IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            );
+        
+        //Only min we need to set is for the Weth balance going in
+        int[] memory limits = new int[](3);
+        limits[0] = int(_amount);
+            
+        balancerVault.batchSwap(
+            IBalancerVault.SwapKind.GIVEN_IN, 
+            swaps, 
+            assets, 
+            fundManagement, 
+            limits, 
+            block.timestamp
         );
     }
 
@@ -356,15 +429,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         uint256 minCOut
     ) internal override {
 
-        uint256[3] memory amounts;
-        amounts[index[tokenA]] = minAOut;
-        amounts[index[tokenB]] = minBOut;
-        amounts[index[tokenC]] = minCOut;
-
-        ICurveFi(pool).remove_liquidity(
-            _amount,
-            amounts
-        );
+        
     }
 
     /*
@@ -453,15 +518,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid _from");
         uint256 prevBalance = IERC20(_tokenTo).balanceOf(address(this));
 
-        ICurveFi _pool = ICurveFi(pool);
         
-        // Perform swap
-        _pool.exchange(
-            index[_tokenFrom], 
-            index[_tokenTo],
-            _amountIn, 
-            _minOutAmount
-        );
 
         return IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
     }
@@ -508,12 +565,11 @@ contract CurveV2Tripod is NoHedgeTripod {
 
             return amounts[amounts.length - 1];
         } else {
-            ICurveFi _pool = ICurveFi(pool);
 
             // Call the quote function in CRV pool
-            return _pool.get_dy(
-                index[_tokenFrom], 
-                index[_tokenTo], 
+            return curvePool.get_dy(
+                _getCRVPoolIndex(_tokenFrom), 
+                _getCRVPoolIndex_(tokenTo), 
                 _amountIn
             );
         }
@@ -524,14 +580,15 @@ contract CurveV2Tripod is NoHedgeTripod {
      *  Function used internally to retrieve the CRV index for a token in a CRV pool
      * @return the token's pool index
      */
-    function _getCRVPoolIndex(address _token) internal view returns(uint256) {
-        uint256 i = 0;
-        ICurveFi _pool = ICurveFi(pool);
+    function _getCRVPoolIndex(address _token) internal view returns(int128) {
+        uint256 i = 0; 
+        int128 poolIndex = 0;
         while (i < 3) {
-            if (_pool.coins(i) == _token) {
-                return i;
+            if (curvePool.coins(i) == _token) {
+                return poolIndex;
             }
             i++;
+            poolIndex++;
         }
 
         //If we get here we do not have the correct pool
@@ -625,8 +682,8 @@ contract CurveV2Tripod is NoHedgeTripod {
             return false;
         }
 
-        if (rewardsContract.earned(address(this)) + IERC20(crvToken).balanceOf(address(this)) >= 
-            _minRewardToHarvest * (10**IERC20Extended(crvToken).decimals()) / RATIO_PRECISION
+        if (rewardsContract.earned(address(this)) + IERC20(balToken).balanceOf(address(this)) >= 
+            _minRewardToHarvest * (10**IERC20Extended(balToken).decimals()) / RATIO_PRECISION
         ) {
             return true;
         }
