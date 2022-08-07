@@ -5,14 +5,14 @@ pragma experimental ABIEncoderV2;
 // Import necessary libraries and interfaces:
 // NoHedgetripod to inherit from
 import "../Hedges/NoHedgeTripod.sol";
-
+import "forge-std/console.sol";
 import { IBalancerVault } from "../interfaces/Balancer/IBalancerVault.sol";
 import { IBalancerPool } from "../interfaces/Balancer/IBalancerPool.sol";
 import { IAsset } from "../interfaces/Balancer/IAsset.sol";
 import {IUniswapV2Router02} from "../interfaces/uniswap/V2/IUniswapV2Router02.sol";
 import {IConvexDeposit} from "../interfaces/Convex/IConvexDeposit.sol";
 import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
-
+import {ICurveFi} from "../interfaces/Curve/IcurveFi.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
@@ -37,14 +37,21 @@ contract BalancerTripod is NoHedgeTripod {
     ICurveFi internal constant curvePool =
         ICurveFi(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
 
+    //Array of the provider tokens to use during lp functions
+    address[3] internal tokens;
+
     /***
         Balancer specific variables
     ***/
     //The main Balancer vault
-    IBalancerVault internal constant balancervault = 
+    IBalancerVault internal constant balancerVault = 
         IBalancerVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
     //The specific Balancer Pool Id
     bytes32 internal poolId;
+    //mapping of the provider tokens to their bb-a-pool
+    mapping (address => bytes32) internal poolIds;
+    //Mapping from provider token to its base bb-a-pool
+    mapping (address => address) internal poolAddress;
 
     /***
         Aura specific variables for staking
@@ -118,15 +125,25 @@ contract BalancerTripod is NoHedgeTripod {
         //UPdate the PID for the rewards pool
         pid = rewardsContract.pid();
 
+        //Main balancer PoolId
         poolId = IBalancerPool(pool).getPoolId();
 
         // The reward tokens are the tokens provided to the pool
         //This will update them based on current rewards on convex
         _updateRewardTokens();
 
-        maxApprove(tokenA, pool);
-        maxApprove(tokenB, pool);
-        maxApprove(tokenC, pool);
+        //Set mapping of poolId's
+        poolAddress[tokenA] = getBalancerPoolId(tokenA);
+        poolAddress[tokenB] = getBalancerPoolId(tokenB);
+        poolAddress[tokenC] = getBalancerPoolId(tokenC);
+
+        tokens[0] = tokenA;
+        tokens[1] = tokenB;
+        tokens[2] = tokenC;
+
+        maxApprove(tokenA, address(balancerVault));
+        maxApprove(tokenB, address(balancerVault));
+        maxApprove(tokenC, address(balancerVault));
         maxApprove(pool, address(depositContract));
     }
 
@@ -189,7 +206,7 @@ contract BalancerTripod is NoHedgeTripod {
     function name() external view override returns (string memory) {
         string memory symbol = string(
             abi.encodePacked(
-                IERC20Extended(poolToken).symbol()
+                IERC20Extended(pool).symbol()
             )
         );
 
@@ -219,7 +236,7 @@ contract BalancerTripod is NoHedgeTripod {
      * @return balance of LP token
      */
     function balanceOfPool() public view override returns (uint256) {
-        return IERC20(poolToken).balanceOf(address(this));
+        return IERC20(pool).balanceOf(address(this));
     }
 
     /*
@@ -263,8 +280,7 @@ contract BalancerTripod is NoHedgeTripod {
         uint256 third = lpDollarValue * 3_333 / 10_000;
 
         //Probably want to get an oracle price and use that to calulatete the percent
-
-        return(third, third, third);
+        return(third, third, third); // Not adjusted for decimals
     }
 
     /*
@@ -309,25 +325,38 @@ contract BalancerTripod is NoHedgeTripod {
      * @return the amounts actually invested for each token
      */
     function createLP() internal override returns (uint256, uint256, uint256) {
-        uint256 _aBalance = balanceOfA();
-        uint256 _bBalance = balanceOfB();
-        uint256 _cBalance = balanceOfC();
+        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](6);
+        //Match the token address with the desired index for this trade
+        IAsset[] memory assets = new IAsset[](7);
+        int[] memory limits = new int[](7);
 
-        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](1);
-
-        swaps[0] = IBalancerVault.BatchSwapStep(
-                poolId,
-                0,
-                1,
-                wethBalance,
+        for (uint256 i; i < 3; i ++) {
+            address token = tokens[i];
+            uint256 balance = IERC20(token).balanceOf(address(this));
+            address bbPool = poolAddress[token];
+            uint256 j = i * 2;
+            swaps[j] = IBalancerVault.BatchSwapStep(
+                IBalancerPool(bbPool).getPoolId(),
+                j,
+                j + 1,
+                balance,
                 abi.encode(0)
             );
 
-        //Match the token address with the desired index for this trade
-        IAsset[] memory assets = new IAsset[](3);
-        assets[0] = IAsset(address(weth));
-        assets[1] = IAsset(usdc);
-        assets[2] = IAsset(address(vst));
+            swaps[j+1] = IBalancerVault.BatchSwapStep(
+                poolId,
+                j + 1,
+                6,
+                0,
+                abi.encode(0)
+            );
+
+            assets[j] = IAsset(token);
+            assets[j+1] = IAsset(bbPool);
+            limits[j] = int(balance);
+        }
+        
+        assets[6] = IAsset(pool);
 
         //Create this contract as the fund manager
         //Set "use internal balance" vars to false since it is a traditional swap
@@ -339,10 +368,6 @@ contract BalancerTripod is NoHedgeTripod {
                 false
             );
         
-        //Only min we need to set is for the Weth balance going in
-        int[] memory limits = new int[](3);
-        limits[0] = int(wethBalance);
-            
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
@@ -354,9 +379,9 @@ contract BalancerTripod is NoHedgeTripod {
 
         unchecked {
             return (
-                (_aBalance - balanceOfA()), 
-                (_bBalance - balanceOfB()), 
-                (_cBalance - balanceOfC())
+                (uint256(limits[0]) - balanceOfA()), 
+                (uint256(limits[2]) - balanceOfB()), 
+                (uint256(limits[4]) - balanceOfC())
             );
         }
     }
@@ -370,7 +395,7 @@ contract BalancerTripod is NoHedgeTripod {
     function burnLP(
         uint256 _amount
     ) internal override {
-
+        /*
         IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](1);
 
         swaps[0] = IBalancerVault.BatchSwapStep(
@@ -409,6 +434,7 @@ contract BalancerTripod is NoHedgeTripod {
             limits, 
             block.timestamp
         );
+        */
     }
 
     /*
@@ -437,7 +463,7 @@ contract BalancerTripod is NoHedgeTripod {
     *   Internal function to deposit lp tokens into Convex and stake
     */
     function depositLP() internal override {
-        uint256 toStake = IERC20(poolToken).balanceOf(address(this));
+        uint256 toStake = IERC20(pool).balanceOf(address(this));
 
         if(toStake == 0) return;
 
@@ -569,9 +595,29 @@ contract BalancerTripod is NoHedgeTripod {
             // Call the quote function in CRV pool
             return curvePool.get_dy(
                 _getCRVPoolIndex(_tokenFrom), 
-                _getCRVPoolIndex_(tokenTo), 
+                _getCRVPoolIndex(_tokenTo), 
                 _amountIn
             );
+        }
+    }
+
+    /*
+    * @internal
+    *   Function used internally to get the poolId based on the address of a provider token
+    * @param _token, The address of providers want
+    * @return poolId of the bb-a pool
+    */
+    function getBalancerPoolId(address _token) internal returns(address) {
+        (IERC20[] memory _tokens, , ) = balancerVault.getPoolTokens(poolId);
+        for(uint256 i; i < _tokens.length; i ++) {
+            IBalancerPool _pool = IBalancerPool(address(_tokens[i]));
+            
+            //We cant call getMainToken on the main pool
+            if(pool == address(_pool)) continue;
+            
+            if(_token == _pool.getMainToken()) {
+                return address(_pool);
+            }
         }
     }
 

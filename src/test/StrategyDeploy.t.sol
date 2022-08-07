@@ -3,22 +3,22 @@ pragma solidity ^0.8.12;
 pragma abicoder v2;
 
 import "forge-std/console.sol";
-import {IERC20Extended} from "../../interfaces/IERC20Extended.sol";
+import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ExtendedTest} from "./ExtendedTest.sol";
+import {ExtendedTest} from "./utils/ExtendedTest.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {IVault} from "../../interfaces/Vault.sol";
-import {BalancerTripod} from "../../DEXes/BalancerTripod.sol";
-import {ProviderStrategy} from "../../ProviderStrategy.sol";
-import {AggregatorV3Interface} from "../../interfaces/AggregatorV3Interface.sol";
+import {IVault} from "../interfaces/Vault.sol";
+import {BalancerTripod} from "../DEXes/BalancerTripod.sol";
+import {ProviderStrategy} from "../ProviderStrategy.sol";
+import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 
 // Artifact paths for deploying from the deps folder, assumes that the command is run from
 // the project root.
 string constant vaultArtifact = "artifacts/Vault.json";
 
 // Base fixture deploying Vault
-contract StrategyFixture is ExtendedTest {
+contract StrategyDeploy is ExtendedTest {
     using SafeERC20 for IERC20;
 
     struct AssetFixture { // To test multiple assets
@@ -68,7 +68,7 @@ contract StrategyFixture is ExtendedTest {
     // Used for integer approximation
     uint256 public constant DELTA = 10**2;
 
-    function setUp() public virtual {
+    function testSetup() public virtual {
         _setTokenPrices();
         _setTokenAddrs();
         //Creates the pools list to choose from what to test
@@ -127,8 +127,8 @@ contract StrategyFixture is ExtendedTest {
         vm.label(management, "Management");
         vm.label(strategist, "Strategist");
         vm.label(keeper, "Keeper");
-        vm.label(poolUsing.pool, "Balancer Pool");
-        vm.label(poolUsing.rewardsContract, "Aura pool");
+        vm.label(poolUsing.pool, "Curve Pool");
+        vm.label(poolUsing.rewardsContract, "Convex pool");
     }
 
     // Deploys a vault

@@ -5,7 +5,7 @@ import {StrategyFixture} from "./utils/StrategyFixture.sol";
 import "forge-std/console.sol";
 
 import {ProviderStrategy} from "../ProviderStrategy.sol";
-import {CurveV2Tripod} from "../DEXes/CurveV2Tripod.sol";
+import {BalancerTripod} from "../DEXes/BalancerTripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {IVault} from "../interfaces/Vault.sol";
@@ -16,7 +16,7 @@ contract StrategyMigrationTest is StrategyFixture {
     }
 
     function testCloneTripod() public {
-        address newTripod = tripod.cloneCurveV2Tripod(
+        address newTripod = tripod.cloneBalancerTripod(
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
@@ -25,14 +25,14 @@ contract StrategyMigrationTest is StrategyFixture {
             poolUsing.rewardsContract
         );
 
-        CurveV2Tripod _newTripod = CurveV2Tripod(newTripod);
+        BalancerTripod _newTripod = BalancerTripod(newTripod);
 
         assertEq(poolUsing.pool, _newTripod.pool());
         assertTrue(!_newTripod.isOriginal());
 
         vm.expectRevert(bytes("!original"));
 
-        _newTripod.cloneCurveV2Tripod(
+        _newTripod.cloneBalancerTripod(
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),

@@ -26,6 +26,8 @@ interface IBalancerPool is IERC20 {
 
     function symbol() external view returns (string memory s);
 
+    function getMainToken() external view returns(address);
+
     function onSwap(
         SwapRequest memory swapRequest,
         uint256[] memory balances,
