@@ -424,31 +424,32 @@ contract BalancerTripod is NoHedgeTripod {
 
         for (uint256 i; i < 3; i ++) {
             address token = tokens[i];
-            uint256 balance = IERC20(token).balanceOf(address(this));
             address bbPool = poolAddress[token];
             uint256 j = i * 2;
             swaps[j] = IBalancerVault.BatchSwapStep(
-                IBalancerPool(bbPool).getPoolId(),
-                0,
+                poolId,
+                6,
                 j,
-                toBurn,
+                j == 0 ? _amount - (toBurn * 2) : toBurn, //To make sure we burn all of the LP
                 abi.encode(0)
             );
 
             swaps[j+1] = IBalancerVault.BatchSwapStep(
-                poolId,
+                IBalancerPool(bbPool).getPoolId(),
                 j,
                 j + 1,
                 0,
                 abi.encode(0)
             );
 
-            assets[j] = IAsset(token);
-            assets[j+1] = IAsset(bbPool);
-            limits[j] = int(balance);
+            assets[j] = IAsset(bbPool);
+            assets[j+1] = IAsset(token);
+            //limits[j] = int(toBurn);
         }
-        
-        assets[0] = IAsset(pool);
+        //Set the lp token as asset 6
+        assets[6] = IAsset(pool);
+        //Update the first swap to make sure we account for rounding errors to burn all of the lp token
+        limits[6] = int(_amount);
 
         //Create this contract as the fund manager
         //Set "use internal balance" vars to false since it is a traditional swap
