@@ -19,8 +19,9 @@ contract RebalanceTest is StrategyFixture {
 
     function testProfitableRebalance(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        
         uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
-
+        
         skip(1 days);
         deal(cvx, address(tripod), _amount/100);
         deal(crv, address(tripod), _amount/100);
@@ -30,7 +31,7 @@ contract RebalanceTest is StrategyFixture {
 
         vm.prank(keeper);
         tripod.harvest();
-
+        
         uint256 aProfit = assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault));
         uint256 bProfit = assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault));
         uint256 cProfit = assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault));
@@ -48,7 +49,7 @@ contract RebalanceTest is StrategyFixture {
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
-
+/*
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
@@ -126,5 +127,5 @@ contract RebalanceTest is StrategyFixture {
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
-
+*/
 }

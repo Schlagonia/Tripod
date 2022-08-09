@@ -40,8 +40,8 @@ contract StrategyFixture is ExtendedTest {
     BalancerTripod public tripod;
     IERC20 public weth;
 
-    address public crv = 0xD533a949740bb3306d119CC777fa900bA034cd52;
-    address public cvx = 0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B;
+    address public crv = 0xba100000625a3754423978a60c9317c58a424e3D;
+    address public cvx = 0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF;
 
     string[] public wantTokens;
     AssetFixture[] public assetFixtures;
