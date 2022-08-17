@@ -211,8 +211,10 @@ contract CurveV2Tripod is NoHedgeTripod {
 
             rewardTokens.push(_rewardsToken);
             //We will use the trade factory for any extra rewards
-            _checkAllowance(tradeFactory, IERC20(_rewardsToken), type(uint256).max);
-            ITradeFactory(tradeFactory).enable(_rewardsToken, usingReference ? referenceToken : tokenA);
+            if(tradeFactory != address(0)) {
+                _checkAllowance(tradeFactory, IERC20(_rewardsToken), type(uint256).max);
+                ITradeFactory(tradeFactory).enable(_rewardsToken, usingReference ? referenceToken : tokenA);
+            }
         }
     }
 
@@ -412,6 +414,8 @@ contract CurveV2Tripod is NoHedgeTripod {
         uint256 _minOut
     ) internal override returns (uint256) {
         if(_amountIn < minAmountToSell) return 0;
+        //Dont swap extra rewarsds
+        if(_from != crvToken && _from != convexToken) return 0;
         
         //Use Router for rewards
         IUniswapV2Router02 _router = IUniswapV2Router02(router);
