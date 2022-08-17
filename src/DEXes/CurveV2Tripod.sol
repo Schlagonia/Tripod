@@ -10,6 +10,7 @@ import {ICurveFi} from "../interfaces/Curve/ICurveFi.sol";
 import {IUniswapV2Router02} from "../interfaces/uniswap/V2/IUniswapV2Router02.sol";
 import {IConvexDeposit} from "../interfaces/Convex/IConvexDeposit.sol";
 import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
+import {ITradeFactory} from "../interfaces/ySwaps/ITradeFactory.sol";
 
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
@@ -29,7 +30,9 @@ contract CurveV2Tripod is NoHedgeTripod {
         0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
 
     // Use sushi router due to higher liquidity for CVX
-    address public router = sushiRouter;
+    address public router;
+    //address of the trade factory to be used for extra rewards
+    address public tradeFactory;
 
     //The token the Curve pool mints for LP deposits
     address public poolToken;
@@ -45,7 +48,7 @@ contract CurveV2Tripod is NoHedgeTripod {
     // this is unique to each pool
     uint256 public pid; 
     //If we chould claim extras on harvests
-    bool public harvestExtras = true; 
+    bool public harvestExtras; 
 
     //Base Reward Tokens
     address internal constant convexToken = 
@@ -107,6 +110,10 @@ contract CurveV2Tripod is NoHedgeTripod {
         poolToken = ICurveFi(pool).token();
         //UPdate the PID for the rewards pool
         pid = rewardsContract.pid();
+        //Set the router to use sushi
+        router = sushiRouter;
+        //Default to always claim extras
+        harvestExtras = true;
 
         // The reward tokens are the tokens provided to the pool
         //This will update them based on current rewards on convex
@@ -203,6 +210,9 @@ contract CurveV2Tripod is NoHedgeTripod {
                 IConvexRewards(virtualRewardsPool).rewardToken();
 
             rewardTokens.push(_rewardsToken);
+            //We will use the trade factory for any extra rewards
+            _checkAllowance(tradeFactory, IERC20(_rewardsToken), type(uint256).max);
+            ITradeFactory(tradeFactory).enable(_rewardsToken, usingReference ? referenceToken : tokenA);
         }
     }
 
@@ -271,14 +281,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         //Just place current balance for convex, avoids complex math and underestimates rewards for safety
         _amountPending[1] = IERC20(convexToken).balanceOf(address(this));
 
-        //We skipped the first two of the rewards list
-        for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
-            address virtualRewardsPool = rewardsContract.extraRewards(i);
-            //Spot 2 in our array will correspond with 0 in Convex's
-            _amountPending[i + 2] = 
-                IConvexRewards(virtualRewardsPool).earned(address(this)) + 
-                    IERC20(rewardTokens[i+2]).balanceOf(address(this));
-        }
+        //Dont qoute any extra rewards since ySwaps will handle them
         return _amountPending;
     }
 
@@ -625,9 +628,7 @@ contract CurveV2Tripod is NoHedgeTripod {
             return false;
         }
 
-        if (rewardsContract.earned(address(this)) + IERC20(crvToken).balanceOf(address(this)) >= 
-            _minRewardToHarvest * (10**IERC20Extended(crvToken).decimals()) / RATIO_PRECISION
-        ) {
+        if (rewardsContract.earned(address(this)) + IERC20(crvToken).balanceOf(address(this)) >= _minRewardToHarvest) {
             return true;
         }
 
@@ -686,5 +687,40 @@ contract CurveV2Tripod is NoHedgeTripod {
 
     function maxApprove(address _token, address _contract) internal {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
+    }
+
+    // ---------------------- YSWAPS FUNCTIONS ----------------------
+    function setTradeFactory(address _tradeFactory) external onlyGovernance {
+        if (tradeFactory != address(0)) {
+            _removeTradeFactoryPermissions();
+        }
+
+        address[] memory _rewardTokens = rewardTokens;
+        ITradeFactory tf = ITradeFactory(_tradeFactory);
+        address swapTo = usingReference ? referenceToken : tokenA;
+        //We only need to set trade factory for non CVX/CRV tokens
+        for(uint256 i = 2; i < _rewardTokens.length; i ++) {
+            address token = rewardTokens[i];
+        
+            IERC20(token).safeApprove(_tradeFactory, type(uint256).max);
+
+            //Default to token A or reference
+            tf.enable(token, swapTo);
+        }
+        tradeFactory = _tradeFactory;
+    }
+
+    function removeTradeFactoryPermissions() external onlyVaultManagers {
+        _removeTradeFactoryPermissions();
+    }
+
+    function _removeTradeFactoryPermissions() internal {
+        address[] memory _rewardTokens = rewardTokens;
+        for(uint256 i = 2; i < _rewardTokens.length; i ++) {
+        
+            IERC20(_rewardTokens[i]).safeApprove(tradeFactory, 0);
+        }
+        
+        tradeFactory = address(0);
     }
 }
