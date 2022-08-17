@@ -74,7 +74,7 @@ contract ManualOpsTest is StrategyFixture {
         uint256 lpBalance = tripod.totalLpBalance(); 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
-        vm.expectRevert();
+        vm.expectRevert(bytes("!sandwiched"));
         tripod.removeLiquidityManually(
             lpBalance/ 2,
             (_a /2) * 11_000 / 10_000,
@@ -90,33 +90,24 @@ contract ManualOpsTest is StrategyFixture {
         deal(cvx, address(tripod), 4e18);
         assertEq(IERC20(cvx).balanceOf(address(tripod)), 4e18);
 
-        uint256 beforeWeth = weth.balanceOf(address(tripod));
+        IERC20 token = IERC20(tokenAddrs["USDC"]);
+        uint256 before = token.balanceOf(address(tripod));
         vm.startPrank(management);
         tripod.swapTokenForTokenManually(
             cvx,
-            address(weth),
+            address(token),
             4e18,
             0,
             false
         );
 
-        assertGt(weth.balanceOf(address(tripod)), beforeWeth);
-        //vm.prank(management);
-        tripod.swapTokenForTokenManually(
-            address(weth),
-            tokenAddrs["USDT"],
-            weth.balanceOf(address(tripod)),
-            0,
-            true
-        );
-
-        assertEq(weth.balanceOf(address(tripod)), 0);
-        assertGt(IERC20(tokenAddrs["USDT"]).balanceOf(address(tripod)), 0);
+        assertGt(token.balanceOf(address(tripod)), before);
+        assertEq(IERC20(cvx).balanceOf(address(tripod)), 0);
     }
 
     function testReturnFundsManually(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
         skip(7 hours);
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
@@ -133,6 +124,9 @@ contract ManualOpsTest is StrategyFixture {
         assertEq(tripod.balanceOfA(), 0, "A balance");
         assertEq(tripod.balanceOfB(), 0, "b balance");
         assertEq(tripod.balanceOfC(), 0, "c balance");
+        assertRelApproxEq(assetFixtures[0].strategy.balanceOfWant(), deposited[0], DELTA);
+        assertRelApproxEq(assetFixtures[1].strategy.balanceOfWant(), deposited[1], DELTA);
+        assertRelApproxEq(assetFixtures[2].strategy.balanceOfWant(), deposited[2], DELTA);
     }
     
 }

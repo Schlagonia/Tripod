@@ -113,6 +113,4 @@ contract StrategyMigrationTest is StrategyFixture {
 
         assertGt(tripod.totalLpBalance(), 0, "No lp balance"); 
     }
-
-
 }

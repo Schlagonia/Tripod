@@ -252,7 +252,7 @@ contract StrategyFixture is ExtendedTest {
 
         vm.startPrank(depositer);
         IERC20(_want).safeApprove(address(_vault), amount);
-        skip(1);
+        //skip(1);
         _vault.deposit(amount);
         vm.stopPrank();
     }

@@ -63,13 +63,6 @@ contract StrategyShutdownTest is StrategyFixture {
         // Earn interest
         skip(2 days);
 
-        // Harvest 2: Realize profit
-        vm.prank(keeper);
-        tripod.harvest();
-
-
-        skip(1 days);
-
         //Pick a random Strategy to shutdown
         uint256 index = _amount % 3;
         console.log("Index ", index);
@@ -108,5 +101,4 @@ contract StrategyShutdownTest is StrategyFixture {
             assertEq(assetFixtures[i].want.balanceOf(address(assetFixtures[i].strategy)), assetFixtures[i].strategy.estimatedTotalAssets());
         }
     }
-    
 }

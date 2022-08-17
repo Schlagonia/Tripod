@@ -9,13 +9,23 @@ import "forge-std/console.sol";
 import { IBalancerVault } from "../interfaces/Balancer/IBalancerVault.sol";
 import { IBalancerPool } from "../interfaces/Balancer/IBalancerPool.sol";
 import { IAsset } from "../interfaces/Balancer/IAsset.sol";
-import {IUniswapV2Router02} from "../interfaces/uniswap/V2/IUniswapV2Router02.sol";
 import {IConvexDeposit} from "../interfaces/Convex/IConvexDeposit.sol";
 import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 import {ICurveFi} from "../interfaces/Curve/IcurveFi.sol";
 import {ITradeFactory} from "../interfaces/ySwaps/ITradeFactory.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
+
+interface IFeedRegistry {
+    function getFeed(address, address) external view returns (address);
+    function latestRoundData(address, address) external view returns (
+        uint80 roundId,
+        int256 answer,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    );
+}
 
 //Pool 0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2
 contract BalancerTripod is NoHedgeTripod {
@@ -26,13 +36,6 @@ contract BalancerTripod is NoHedgeTripod {
     // Used for cloning, will automatically be set to false for other clones
     bool public isOriginal = true;
 
-    //Routers to use for reward swaps
-    address internal constant sushiRouter =
-        0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F;
-    address internal constant uniRouter =
-        0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
-    // Use sushi router due to higher liquidity for CVX
-    address public router = sushiRouter;
     address internal constant usdcAddress =
         0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     //address of the trade factory to be used for extra rewards
@@ -41,6 +44,8 @@ contract BalancerTripod is NoHedgeTripod {
     //Curve 3 Pool for easy quoting of stable coin swaps
     ICurveFi internal constant curvePool =
         ICurveFi(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
+    //Index mapping provider token to its crv index 
+    mapping (address => int128) internal curveIndex;
 
     //Array of the provider tokens to use during lp functions
     address[3] internal tokens;
@@ -148,6 +153,11 @@ contract BalancerTripod is NoHedgeTripod {
         poolAddress[tokenB] = getBalancerPool(tokenB);
         poolAddress[tokenC] = getBalancerPool(tokenC);
 
+        //Set mapping of curve index's
+        curveIndex[tokenA] = _getCRVPoolIndex(tokenA);
+        curveIndex[tokenB] = _getCRVPoolIndex(tokenB);
+        curveIndex[tokenC] = _getCRVPoolIndex(tokenC);
+
         tokens[0] = tokenA;
         tokens[1] = tokenB;
         tokens[2] = tokenC;
@@ -229,9 +239,11 @@ contract BalancerTripod is NoHedgeTripod {
 
         //We know we will be getting curve and convex at least
         rewardTokens.push(balToken);
-        maxApprove(balToken, address(balancerVault));
+        _checkAllowance(address(balancerVault), IERC20(balToken), type(uint256).max);
+        //maxApprove(balToken, address(balancerVault));
         rewardTokens.push(auraToken);
-        maxApprove(auraToken, address(balancerVault));
+        _checkAllowance(address(balancerVault), IERC20(auraToken), type(uint256).max);
+        //maxApprove(auraToken, address(balancerVault));
 
         for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
             address virtualRewardsPool = rewardsContract.extraRewards(i);
@@ -240,7 +252,8 @@ contract BalancerTripod is NoHedgeTripod {
 
             rewardTokens.push(_rewardsToken);
             //We will use the trade factory for any extra rewards
-            IERC20(_rewardsToken).safeApprove(tradeFactory, type(uint256).max);
+            _checkAllowance(tradeFactory, IERC20(_rewardsToken), type(uint256).max);
+            //IERC20(_rewardsToken).safeApprove(tradeFactory, type(uint256).max);
             ITradeFactory(tradeFactory).enable(_rewardsToken, usdcAddress);
         }
     }
@@ -320,14 +333,7 @@ contract BalancerTripod is NoHedgeTripod {
         //Just place current balance for convex, avoids complex math and underestimates rewards for safety
         _amountPending[1] = IERC20(auraToken).balanceOf(address(this));
 
-        //We skipped the first two of the rewards list
-        for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
-            address virtualRewardsPool = rewardsContract.extraRewards(i);
-            //Spot 2 in our array will correspond with 0 in Convex's
-            _amountPending[i + 2] = 
-                IConvexRewards(virtualRewardsPool).earned(address(this)) + 
-                    IERC20(rewardTokens[i+2]).balanceOf(address(this));
-        }
+        //Dont qoute any extra rewards since ySwaps will handle them
         return _amountPending;
     }
 
@@ -448,7 +454,6 @@ contract BalancerTripod is NoHedgeTripod {
         }
         //Set the lp token as asset 6
         assets[6] = IAsset(pool);
-        //Update the first swap to make sure we account for rounding errors to burn all of the lp token
         limits[6] = int(_amount);
 
         //Create this contract as the fund manager
@@ -472,27 +477,6 @@ contract BalancerTripod is NoHedgeTripod {
     }
 
     /*
-     * @notice
-     *  Function used internally to close the LP position: 
-     *      - burns the LP liquidity specified amount
-     *      - Assures that the min is received
-     *  
-     * @param amount, amount of liquidity to burn
-     * @param minAOut, the min amount of Token A we should receive
-     * @param minBOut, the min amount of Token B we should recieve
-     * @param minCout, the min amount of Token C we should recieve
-     */
-    function burnLP(
-        uint256 _amount,
-        uint256 minAOut, 
-        uint256 minBOut, 
-        uint256 minCOut
-    ) internal override {
-
-        
-    }
-
-    /*
     * @notice
     *   Internal function to deposit lp tokens into Convex and stake
     */
@@ -510,7 +494,7 @@ contract BalancerTripod is NoHedgeTripod {
     *   harvesExtras will determine if we claim rewards, normally should be true
     */
     function withdrawLP(uint256 amount) internal override {
-        
+
         rewardsContract.withdrawAndUnwrap(
             amount, 
             harvestExtras
@@ -569,7 +553,7 @@ contract BalancerTripod is NoHedgeTripod {
             abi.encode(0)
         );
 
-        //bb-tokenTo -> tokneTo
+        //bb-tokenTo -> tokenTo
         swaps[2] = IBalancerVault.BatchSwapStep(
             IBalancerPool(poolAddress[_tokenTo]).getPoolId(),
             2,
@@ -617,6 +601,7 @@ contract BalancerTripod is NoHedgeTripod {
      *  Function used internally to quote a potential rebalancing swap without actually 
      * executing it. Same as the swap function, will simulate the trade either on the UniV2
      * pool or CRV pool based on the tokens being swapped
+     * We are using the curve pool due to easier get Amount out ability for core coins
      * @param _tokenFrom, adress of token to swap from
      * @param _tokenTo, address of token to swap to
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
@@ -636,29 +621,20 @@ contract BalancerTripod is NoHedgeTripod {
                         _tokenTo == tokenC, 
                             "must be valid token"); 
 
-        //We should only use curve if _from AND _to is one of the LP tokens
-        bool useCurve;
-        if(_tokenFrom == tokenA 
-            || _tokenFrom == tokenB 
-                || _tokenFrom == tokenC) useCurve = true;
-
-        if(!useCurve) {
-            // Do NOT use crv pool use V2 router
-            IUniswapV2Router02 _router = IUniswapV2Router02(router);
-
-            // Call the quote function in CRV pool
-            uint256[] memory amounts = _router.getAmountsOut(
-                _amountIn, 
-                getTokenOutPath(_tokenFrom, _tokenTo)
+        if(_tokenFrom == balToken) {
+            (, int256 balPrice,,,) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
+                balToken,
+                address(0x0000000000000000000000000000000000000348) // USD
             );
 
-            return amounts[amounts.length - 1];
+            //Get the latest oracle price for bal * amount of bal / (1e8 + (diff of token decimals to bal decimals)) to adjust oracle price that is 1e8
+            return uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
         } else {
 
             // Call the quote function in CRV pool
             return curvePool.get_dy(
-                _getCRVPoolIndex(_tokenFrom), 
-                _getCRVPoolIndex(_tokenTo), 
+                curveIndex[_tokenFrom], 
+                curveIndex[_tokenTo], 
                 _amountIn
             );
         }
@@ -676,6 +652,9 @@ contract BalancerTripod is NoHedgeTripod {
         
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
         uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
+ 
+        //Cant swap 0
+        if(balBalance == 0 || auraBalance == 0) return;
 
         //Sell bal -> weth
         swaps[0] = IBalancerVault.BatchSwapStep(
@@ -751,7 +730,7 @@ contract BalancerTripod is NoHedgeTripod {
     * @param _token, The address of providers want
     * @return poolId of the bb-a pool
     */
-    function getBalancerPool(address _token) internal returns(address) {
+    function getBalancerPool(address _token) internal view returns(address) {
         (IERC20[] memory _tokens, , ) = balancerVault.getPoolTokens(poolId);
         for(uint256 i; i < _tokens.length; i ++) {
             IBalancerPool _pool = IBalancerPool(address(_tokens[i]));
@@ -783,6 +762,69 @@ contract BalancerTripod is NoHedgeTripod {
 
         //If we get here we do not have the correct pool
         revert("No pool index");
+    }
+
+    /*
+    * Will swap specifc reward token to USDC
+    */
+    function swapReward(
+        address _from, 
+        address /*_to*/, 
+        uint256 _amountIn, 
+        uint256 _minOut
+    ) internal override returns (uint256) {
+        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](2);
+        uint256 balBefore = IERC20(usdcAddress).balanceOf(address(this));
+
+        address _pool = _from == balToken ? balEthPool : auraEthPool;
+        //Sell reward -> weth
+        swaps[0] = IBalancerVault.BatchSwapStep(
+            IBalancerPool(_pool).getPoolId(),
+            0,
+            1,
+            _amountIn,
+            abi.encode(0)
+        );
+        
+        //Sell WETH -> USDC due to higher liquidity
+        swaps[1] = IBalancerVault.BatchSwapStep(
+            IBalancerPool(ethUsdcPool).getPoolId(),
+            1,
+            2,
+            0,
+            abi.encode(0)
+        );
+
+        //Match the token address with the desired index for this trade
+        IAsset[] memory assets = new IAsset[](3);
+        assets[0] = IAsset(_from);
+        assets[1] = IAsset(referenceToken);
+        assets[2] = IAsset(usdcAddress);
+
+        //Create this contract as the fund manager
+        //Set "use internal balance" vars to false since it is a traditional swap
+        IBalancerVault.FundManagement memory fundManagement =
+            IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            );
+        
+        //Only min we need to set is for the in balance going in
+        int[] memory limits = new int[](3);
+        limits[0] = int(_amountIn);
+
+        balancerVault.batchSwap(
+            IBalancerVault.SwapKind.GIVEN_IN, 
+            swaps, 
+            assets, 
+            fundManagement, 
+            limits, 
+            block.timestamp
+        );
+
+        require(IERC20(usdcAddress).balanceOf(address(this)) - balBefore >= _minOut, "!minOut");
     }
 
     /*
@@ -835,6 +877,62 @@ contract BalancerTripod is NoHedgeTripod {
     function shouldEndEpoch() public view override returns (bool) {}
 
     /*
+    * @notice
+    *   Function available internally to create an lp during tend
+    *   Will only use USDC since that is what is swapped to during harvests
+    */
+    function createUSDCLP() internal {
+        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](2);
+    
+        IAsset[] memory assets = new IAsset[](3);
+        int[] memory limits = new int[](3);
+
+        uint256 balance = IERC20(usdcAddress).balanceOf(address(this));
+        address bbPool = poolAddress[usdcAddress];
+
+        swaps[0] = IBalancerVault.BatchSwapStep(
+            IBalancerPool(bbPool).getPoolId(),
+            0,
+            1,
+            balance,
+            abi.encode(0)
+        );
+
+        swaps[1] = IBalancerVault.BatchSwapStep(
+            poolId,
+            1,
+            2,
+            0,
+            abi.encode(0)
+        );
+
+        assets[0] = IAsset(usdcAddress);
+        assets[1] = IAsset(bbPool);
+        assets[2] = IAsset(pool);
+
+        limits[0] = int(balance);
+        
+        //Create this contract as the fund manager
+        //Set "use internal balance" vars to false since it is a traditional swap
+        IBalancerVault.FundManagement memory fundManagement =
+            IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            );
+        
+        balancerVault.batchSwap(
+            IBalancerVault.SwapKind.GIVEN_IN, 
+            swaps, 
+            assets, 
+            fundManagement, 
+            limits, 
+            block.timestamp
+        );
+    }
+
+    /*
     * @notice 
     *  To be called inbetween harvests if applicable
     *  This will claim and sell rewards and create an LP with all available funds
@@ -847,7 +945,7 @@ contract BalancerTripod is NoHedgeTripod {
         //Swap out of all Reward Tokens
         swapRewardTokens();
         //Create LP tokens
-        createLP();
+        createUSDCLP();
         //Stake LP tokens
         depositLP();
     }
@@ -897,38 +995,6 @@ contract BalancerTripod is NoHedgeTripod {
     */
     function setHarvestExtras(bool _harvestExtras) external onlyVaultManagers {
         harvestExtras = _harvestExtras;
-    }
-
-    /*
-    * @notice
-    *   Function available to management to change which UniV2 router we are using
-    */
-    function changeRouter() external onlyVaultManagers {
-        router = router == sushiRouter ? uniRouter : sushiRouter;
-    }
-
-        /*
-     * @notice
-     *  Function available internally deciding the swapping path to follow
-     * @param _tokenIn, address of the token to swap from
-     * @param _tokenOut, address of the token to swap to
-     * @return address array of the swap path to follow
-     */
-    function getTokenOutPath(address _tokenIn, address _tokenOut)
-        internal
-        view
-        returns (address[] memory _path)
-    {   
-        bool isReferenceToken = _tokenIn == address(referenceToken) ||
-            _tokenOut == address(referenceToken);
-        _path = new address[](isReferenceToken ? 2 : 3);
-        _path[0] = _tokenIn;
-        if (isReferenceToken) {
-            _path[1] = _tokenOut;
-        } else {
-            _path[1] = address(referenceToken);
-            _path[2] = _tokenOut;
-        }
     }
 
     function maxApprove(address _token, address _contract) internal {
