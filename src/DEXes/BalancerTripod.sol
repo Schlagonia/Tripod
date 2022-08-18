@@ -68,9 +68,12 @@ contract BalancerTripod is NoHedgeTripod {
     IBalancerVault internal constant balancerVault = 
         IBalancerVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
     //Pools we use for swapping rewards
-    bytes32 internal balEthPoolId;
-    bytes32 internal auraEthPoolId;
-    bytes32 internal ethUsdcPoolId;
+    bytes32 internal constant balEthPoolId = 
+        bytes32(0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014);
+    bytes32 internal constant auraEthPoolId = 
+        bytes32(0xc29562b045d80fd77c69bec09541f5c16fe20d9d000200000000000000000251);
+    bytes32 internal constant ethUsdcPoolId =
+        bytes32(0x96646936b91d6b9d7d0c47c496afbf3d6ec7b6f8000200000000000000000019);
     //The main Balancer Pool Id
     bytes32 internal poolId;
 
@@ -159,11 +162,6 @@ contract BalancerTripod is NoHedgeTripod {
         poolInfo[0] = getBalancerPoolInfo(tokenA);
         poolInfo[1] = getBalancerPoolInfo(tokenB);
         poolInfo[2] = getBalancerPoolInfo(tokenC);
-
-        //Set pool Ids for rewards swapping
-        balEthPoolId = IBalancerPool(0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56).getPoolId();
-        auraEthPoolId = IBalancerPool(0xc29562b045D80fD77c69Bec09541F5c16fe20d9d).getPoolId();
-        ethUsdcPoolId = IBalancerPool(0x96646936b91d6B9D7D0c47C496AfBF3D6ec7B6f8).getPoolId();
 
         //Set mapping of curve index's
         curveIndex[tokenA] = _getCRVPoolIndex(tokenA);
