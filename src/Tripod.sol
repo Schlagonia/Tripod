@@ -6,7 +6,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-
+import "forge-std/console.sol";
 import "./interfaces/IERC20Extended.sol";
 
 import {IVault} from "./interfaces/Vault.sol";
@@ -570,6 +570,9 @@ abstract contract Tripod {
                     balanceOfC()
                 );
         
+        console.log("ratio A ", ratioA);
+        console.log("ratio b ", ratioB);
+        console.log("ratio c ", ratioC);
         //If they are all the same we dont need to do anything
         if( ratioA == ratioB && ratioB == ratioC) return;
 
@@ -578,6 +581,7 @@ abstract contract Tripod {
         unchecked{
             avgRatio = (ratioA + ratioB + ratioC) / 3;
         }
+        console.log("avg ratio ", avgRatio);
 
         //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
         //If two are higher than the average each has its diff traded to the third
@@ -588,6 +592,7 @@ abstract contract Tripod {
 
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
+                console.log("Swapping a -> b and C");
                 swapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
             } else if (ratioC > avgRatio) {
                 //swapping A and C -> B

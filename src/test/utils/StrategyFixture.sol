@@ -65,7 +65,7 @@ contract StrategyFixture is ExtendedTest {
     uint256 public minFuzzAmt = 10 ether; // 10 cents
     // @dev maximum amount of want tokens deposited based on @maxDollarNotional
     uint256 public maxFuzzAmt = 2_500_000 ether; // $2.5M
-    // Used for integer approximation
+    // Used for integer approximation 10**2 == 1%
     uint256 public constant DELTA = 10**2;
 
     function setUp() public virtual {

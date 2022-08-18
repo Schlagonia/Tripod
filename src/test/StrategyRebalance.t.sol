@@ -128,4 +128,48 @@ contract RebalanceTest is StrategyFixture {
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
 
+    function testQuoteRebalanceCloseToReal(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        depositAllVaultsAndHarvest(_amount);
+
+        skip(1);
+        //earn profit
+        deal(cvx, address(tripod), _amount/10);
+        deal(crv, address(tripod), _amount/10);
+        skip(1);
+
+        (uint256 _a, uint256  _b, uint256  _c) = tripod.estimatedTotalAssetsAfterBalance();
+
+        (uint256 aRatio, uint256  bRatio, uint256  cRatio) = tripod.getRatios(
+            _a,
+            _b,
+            _c
+        );
+
+        console.log("A ratio ", aRatio);
+        console.log("B ratio ", bRatio);
+        console.log("C ratio ", cRatio);
+
+        assertRelApproxEq(aRatio, bRatio, DELTA);
+        assertRelApproxEq(bRatio, cRatio, DELTA);
+
+        vm.prank(management);
+        tripod.setDontInvestWant(true);
+
+        setProvidersHealthCheck(false);
+
+        vm.prank(keeper);
+        tripod.harvest();
+
+        //make sure the qoute was accurate. Should under report a bit
+        if(assetFixtures[0].strategy.balanceOfWant() + assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault)) < _a) { 
+            assertRelApproxEq(assetFixtures[0].strategy.balanceOfWant() + assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault)), _a, DELTA);
+        }
+        if(assetFixtures[1].strategy.balanceOfWant() + assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault)) < _b) { 
+            assertRelApproxEq(assetFixtures[1].strategy.balanceOfWant() + assetFixtures[1].want.balanceOf(address(assetFixtures[0].vault)), _b, DELTA);
+        }
+        if(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault)) < _c) {
+            assertRelApproxEq(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[0].vault)), _c, DELTA);
+        }
+    }
 }

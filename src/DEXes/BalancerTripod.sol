@@ -27,7 +27,6 @@ interface IFeedRegistry {
     );
 }
 
-//Pool 0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2
 contract BalancerTripod is NoHedgeTripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -80,7 +79,7 @@ contract BalancerTripod is NoHedgeTripod {
     // this is unique to each pool
     uint256 public pid; 
     //If we chould claim extras on harvests
-    bool public harvestExtras = true; 
+    bool public harvestExtras; 
 
     //Base Reward Tokens
     address internal constant auraToken = 
@@ -140,6 +139,8 @@ contract BalancerTripod is NoHedgeTripod {
         rewardsContract = IConvexRewards(_rewardsContract);
         //UPdate the PID for the rewards pool
         pid = rewardsContract.pid();
+        //Default to always claim extras
+        harvestExtras = true;
 
         //Main balancer PoolId
         poolId = IBalancerPool(pool).getPoolId();
@@ -237,13 +238,12 @@ contract BalancerTripod is NoHedgeTripod {
     function _updateRewardTokens() internal {
         delete rewardTokens; //empty the rewardsTokens and rebuild
 
-        //We know we will be getting curve and convex at least
+        //We know we will be getting bal and Aura at least
         rewardTokens.push(balToken);
         _checkAllowance(address(balancerVault), IERC20(balToken), type(uint256).max);
-        //maxApprove(balToken, address(balancerVault));
+
         rewardTokens.push(auraToken);
         _checkAllowance(address(balancerVault), IERC20(auraToken), type(uint256).max);
-        //maxApprove(auraToken, address(balancerVault));
 
         for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
             address virtualRewardsPool = rewardsContract.extraRewards(i);
@@ -252,9 +252,10 @@ contract BalancerTripod is NoHedgeTripod {
 
             rewardTokens.push(_rewardsToken);
             //We will use the trade factory for any extra rewards
-            _checkAllowance(tradeFactory, IERC20(_rewardsToken), type(uint256).max);
-            //IERC20(_rewardsToken).safeApprove(tradeFactory, type(uint256).max);
-            ITradeFactory(tradeFactory).enable(_rewardsToken, usdcAddress);
+            if(tradeFactory != address(0)) {
+                _checkAllowance(tradeFactory, IERC20(_rewardsToken), type(uint256).max);
+                ITradeFactory(tradeFactory).enable(_rewardsToken, usdcAddress);
+            }
         }
     }
 
@@ -309,7 +310,7 @@ contract BalancerTripod is NoHedgeTripod {
         //div by 3
         uint256 third = lpDollarValue * 3_333 / 10_000;
         
-        //Probably want to get an oracle price and use that to calulatete the percent
+        //Adjust for decimals
         unchecked {
             _balanceA = third / (10 ** (18 - IERC20Extended(tokenA).decimals()));
             _balanceB = third / (10 ** (18 - IERC20Extended(tokenB).decimals()));
@@ -330,10 +331,8 @@ contract BalancerTripod is NoHedgeTripod {
         _amountPending[0] = 
             rewardsContract.earned(address(this)) + 
                 IERC20(balToken).balanceOf(address(this));
-        //Just place current balance for convex, avoids complex math and underestimates rewards for safety
-        _amountPending[1] = IERC20(auraToken).balanceOf(address(this));
 
-        //Dont qoute any extra rewards since ySwaps will handle them
+        //Dont qoute any extra rewards since ySwaps will handle them, or Aura since the is no oracle
         return _amountPending;
     }
 
@@ -384,22 +383,12 @@ contract BalancerTripod is NoHedgeTripod {
         }
         
         assets[6] = IAsset(pool);
-
-        //Create this contract as the fund manager
-        //Set "use internal balance" vars to false since it is a traditional swap
-        IBalancerVault.FundManagement memory fundManagement =
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            );
         
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            fundManagement, 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -456,21 +445,11 @@ contract BalancerTripod is NoHedgeTripod {
         assets[6] = IAsset(pool);
         limits[6] = int(_amount);
 
-        //Create this contract as the fund manager
-        //Set "use internal balance" vars to false since it is a traditional swap
-        IBalancerVault.FundManagement memory fundManagement =
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            );
-        
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            fundManagement, 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -568,16 +547,6 @@ contract BalancerTripod is NoHedgeTripod {
         assets[1] = IAsset(poolAddress[_tokenFrom]);
         assets[2] = IAsset(poolAddress[_tokenTo]);
         assets[3] = IAsset(_tokenTo);
-
-        //Create this contract as the fund manager
-        //Set "use internal balance" vars to false since it is a traditional swap
-        IBalancerVault.FundManagement memory fundManagement =
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            );
         
         //Only min we need to set is for the Weth balance going in
         int[] memory limits = new int[](4);
@@ -588,7 +557,7 @@ contract BalancerTripod is NoHedgeTripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            fundManagement, 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -698,16 +667,6 @@ contract BalancerTripod is NoHedgeTripod {
         assets[1] = IAsset(auraToken);
         assets[2] = IAsset(referenceToken);
         assets[3] = IAsset(usdcAddress);
-
-        //Create this contract as the fund manager
-        //Set "use internal balance" vars to false since it is a traditional swap
-        IBalancerVault.FundManagement memory fundManagement =
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            );
         
         //Only min we need to set is for the Weth balance going in
         int[] memory limits = new int[](4);
@@ -718,7 +677,7 @@ contract BalancerTripod is NoHedgeTripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            fundManagement, 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -801,16 +760,6 @@ contract BalancerTripod is NoHedgeTripod {
         assets[1] = IAsset(referenceToken);
         assets[2] = IAsset(usdcAddress);
 
-        //Create this contract as the fund manager
-        //Set "use internal balance" vars to false since it is a traditional swap
-        IBalancerVault.FundManagement memory fundManagement =
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            );
-        
         //Only min we need to set is for the in balance going in
         int[] memory limits = new int[](3);
         limits[0] = int(_amountIn);
@@ -819,12 +768,14 @@ contract BalancerTripod is NoHedgeTripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            fundManagement, 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );
 
-        require(IERC20(usdcAddress).balanceOf(address(this)) - balBefore >= _minOut, "!minOut");
+        uint256 diff = IERC20(usdcAddress).balanceOf(address(this)) - balBefore;
+        require(diff >= _minOut, "!minOut");
+        return diff;
     }
 
     /*
@@ -912,21 +863,11 @@ contract BalancerTripod is NoHedgeTripod {
 
         limits[0] = int(balance);
         
-        //Create this contract as the fund manager
-        //Set "use internal balance" vars to false since it is a traditional swap
-        IBalancerVault.FundManagement memory fundManagement =
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            );
-        
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            fundManagement, 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -970,9 +911,7 @@ contract BalancerTripod is NoHedgeTripod {
             return false;
         }
 
-        if (rewardsContract.earned(address(this)) + IERC20(balToken).balanceOf(address(this)) >= 
-            _minRewardToHarvest * (10**IERC20Extended(balToken).decimals()) / RATIO_PRECISION
-        ) {
+        if (rewardsContract.earned(address(this)) + IERC20(balToken).balanceOf(address(this)) >= _minRewardToHarvest) {
             return true;
         }
 
@@ -999,6 +938,15 @@ contract BalancerTripod is NoHedgeTripod {
 
     function maxApprove(address _token, address _contract) internal {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
+    }
+
+    function getFundManagement() internal view returns (IBalancerVault.FundManagement memory fundManagement) {
+        fundManagement = IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            );
     }
 
     // ---------------------- YSWAPS FUNCTIONS ----------------------

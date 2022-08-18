@@ -25,6 +25,10 @@ contract StrategyOperationsTest is StrategyFixture {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
+        assertEq(tripod.invested(address(assetFixtures[0].want)), deposited[0]);
+        assertEq(tripod.invested(address(assetFixtures[1].want)), deposited[1]);
+        assertEq(tripod.invested(address(assetFixtures[2].want)), deposited[2]);
+        
         skip(1 days);
 
         vm.prank(gov);
