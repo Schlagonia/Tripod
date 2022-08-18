@@ -291,10 +291,10 @@ contract BalancerTripod is NoHedgeTripod {
      * @return _balanceB, balance of tokenB in the LP position
      * @return _balanceC, balance of tokenC in the LP position
      */
-    function balanceOfTokensInLP()
+    function balanceOfTokensInLPs()
         public
         view
-        override
+        
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
         uint256 lpBalance = totalLpBalance();
@@ -316,6 +316,41 @@ contract BalancerTripod is NoHedgeTripod {
             _balanceB = third / (10 ** (18 - IERC20Extended(tokenB).decimals()));
             _balanceC = third / (10 ** (18 - IERC20Extended(tokenC).decimals()));
         }
+    }
+
+    function balanceOfTokensInLP()
+        public
+        view
+        override
+        returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
+    {
+        uint256 lpBalance = totalLpBalance();
+     
+        if(lpBalance == 0) return (0, 0, 0);
+
+        //get the virtual price .getRate()
+        uint256 virtualPrice = IBalancerPool(pool).getRate();
+ 
+        //Calculate vp -> dollars
+        uint256 lpDollarValue = lpBalance * virtualPrice / (10 ** IERC20Extended(pool).decimals());
+        
+        uint256 totalInvested;
+        uint256 aAdjusted = invested[tokenA] * (10 ** (18 - IERC20Extended(tokenA).decimals()));
+        totalInvested += aAdjusted;
+        uint256 bAdjusted = invested[tokenB] * (10 ** (18 - IERC20Extended(tokenB).decimals()));
+        totalInvested += bAdjusted;
+        uint256 cAdjusted = invested[tokenC] * (10 ** (18 - IERC20Extended(tokenC).decimals()));
+        totalInvested += cAdjusted;
+        console.log("Total Invested ", totalInvested);
+        uint256 aRatio = aAdjusted * RATIO_PRECISION / totalInvested;
+        uint256 bRatio = bAdjusted * RATIO_PRECISION / totalInvested;
+        uint256 cRatio = cAdjusted * RATIO_PRECISION / totalInvested;
+
+        _balanceA = lpDollarValue * aRatio / (RATIO_PRECISION * (10 ** (18 - IERC20Extended(tokenA).decimals())));
+        console.log("A balance ", _balanceA);
+        _balanceB = lpDollarValue * bRatio / (RATIO_PRECISION * (10 ** (18 - IERC20Extended(tokenB).decimals())));
+        _balanceC = lpDollarValue * cRatio / (RATIO_PRECISION * (10 ** (18 - IERC20Extended(tokenC).decimals())));
+        console.log("C balance ",_balanceC );
     }
 
     /*

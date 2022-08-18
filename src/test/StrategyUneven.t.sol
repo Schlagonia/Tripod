@@ -51,7 +51,7 @@ contract StrategyUnevenTest is StrategyFixture {
         skip(1);
         harvestTripod();
     }
-
+/*
     /// Test Operations
     function testStrategyOperation(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
@@ -79,7 +79,7 @@ contract StrategyUnevenTest is StrategyFixture {
 
         assertRelApproxEq(_want.balanceOf(user), deposited[index], DELTA);
     }
-/*
+
     function testChangeDebt(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         uint256[3] memory deposited =  depositAllVaultsAndHarvestUneven(_amount);
@@ -207,7 +207,7 @@ contract StrategyUnevenTest is StrategyFixture {
         }
     }
 
-        function testProfitableRebalance(uint256 _amount) public {
+    function testProfitableRebalance(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         
         uint256[3] memory deposited = depositAllVaultsAndHarvestUneven(_amount);
@@ -278,21 +278,25 @@ contract StrategyUnevenTest is StrategyFixture {
         assertGt(bRatio2, bRatio);
         assertGt(cRatio2, cRatio);
     }
-
+*/
     function testQuoteRebalance(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvestUneven(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvestUneven(_amount);
 
         skip(1);
 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
+        console.log("deposited A ", deposited[0], " _a ", _a);
+        assertRelApproxEq(deposited[0], _a, DELTA);
+        assertRelApproxEq(deposited[1], _b, DELTA);
+        assertRelApproxEq(deposited[2], _c, DELTA);
 
         (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
             _a,
             _b,
             _c
         );
-
+        console.log("first ratios");
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
 
@@ -317,7 +321,7 @@ contract StrategyUnevenTest is StrategyFixture {
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
-
+/*
     function testQuoteRebalanceCloseToReal(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvestUneven(_amount);
