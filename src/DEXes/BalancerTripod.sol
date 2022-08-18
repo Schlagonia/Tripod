@@ -291,10 +291,10 @@ contract BalancerTripod is NoHedgeTripod {
      * @return _balanceB, balance of tokenB in the LP position
      * @return _balanceC, balance of tokenC in the LP position
      */
-    function balanceOfTokensInLPs()
+    function balanceOfTokensInLP()
         public
         view
-        
+        override
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
         uint256 lpBalance = totalLpBalance();
@@ -318,10 +318,10 @@ contract BalancerTripod is NoHedgeTripod {
         }
     }
 
-    function balanceOfTokensInLP()
+    function balanceOfTokensInLPs()
         public
         view
-        override
+        
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
         uint256 lpBalance = totalLpBalance();
