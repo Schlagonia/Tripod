@@ -134,8 +134,8 @@ contract RebalanceTest is StrategyFixture {
 
         skip(1);
         //earn profit
-        deal(cvx, address(tripod), _amount/10);
-        deal(crv, address(tripod), _amount/10);
+        deal(cvx, address(tripod), _amount/100);
+        deal(crv, address(tripod), _amount/100);
         skip(1);
 
         (uint256 _a, uint256  _b, uint256  _c) = tripod.estimatedTotalAssetsAfterBalance();
@@ -166,10 +166,10 @@ contract RebalanceTest is StrategyFixture {
             assertRelApproxEq(assetFixtures[0].strategy.balanceOfWant() + assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault)), _a, DELTA);
         }
         if(assetFixtures[1].strategy.balanceOfWant() + assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault)) < _b) { 
-            assertRelApproxEq(assetFixtures[1].strategy.balanceOfWant() + assetFixtures[1].want.balanceOf(address(assetFixtures[0].vault)), _b, DELTA);
+            assertRelApproxEq(assetFixtures[1].strategy.balanceOfWant() + assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault)), _b, DELTA);
         }
         if(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault)) < _c) {
-            assertRelApproxEq(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[0].vault)), _c, DELTA);
+            assertRelApproxEq(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault)), _c, DELTA);
         }
     }
 }
