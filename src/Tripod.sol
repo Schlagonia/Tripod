@@ -1256,6 +1256,8 @@ abstract contract Tripod {
         require(expectedBalanceA <= balanceOfA() - _a, "!sandwiched");
         require(expectedBalanceB <= balanceOfB() - _b, "!sandwiched");
         require(expectedBalanceC <= balanceOfC() - _c, "!sandwiched");
+        // reset invested balances or we wont be able to open up a position again
+        invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
     }
 
     /*

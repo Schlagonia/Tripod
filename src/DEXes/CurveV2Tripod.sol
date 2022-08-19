@@ -197,6 +197,13 @@ contract CurveV2Tripod is NoHedgeTripod {
         return string(abi.encodePacked("NoHedgeCurveV2Tripod(", symbol, ")"));
     }
 
+    /*
+    * @notice
+    *   internal function called during initilization and by gov to update the rewardTokens array
+    *   Auto adds crv and cvx tokens, then checks the rewards contract to see if there are any "extra rewards"
+    *   available for this pool
+    *   Will max approve any extras to the trade factory
+    */
     function _updateRewardTokens() internal {
         delete rewardTokens; //empty the rewardsTokens and rebuild
 
