@@ -138,4 +138,34 @@ contract ManualOpsTest is StrategyFixture {
         assertEq(tripod.balanceOfC(), 0, "c balance");
     }
     
+    function testSetKeeper(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        depositAllVaultsAndHarvest(_amount);
+
+        vm.prank(gov);
+        tripod.setKeeper(address(69));
+
+        skip(1 days);
+
+        vm.prank(keeper);
+        vm.expectRevert("!authorized");
+        tripod.harvest();
+
+        vm.prank(address(69));
+        tripod.harvest();
+    }
+
+    function testUpdateRewards(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
+
+        skip(1);
+
+        vm.prank(management);
+        tripod.updateRewardTokens();
+        
+        assertEq(tripod.getRewardTokensLength(), 2);
+
+    }
 }
+

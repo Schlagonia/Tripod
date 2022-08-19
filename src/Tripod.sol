@@ -6,7 +6,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-
+//import "forge-std/console.sol";
 import "./interfaces/IERC20Extended.sol";
 
 import {IVault} from "./interfaces/Vault.sol";
@@ -488,8 +488,10 @@ abstract contract Tripod {
             return true;
         }
 
-        //Check if we are past our max time
-        if(block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime) {
+        //Check if we have assets and are past our max time
+        if(totalLpBalance() > 0 &&
+            block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime
+        ) {
             return true;
         }
 
@@ -569,7 +571,7 @@ abstract contract Tripod {
                     balanceOfB(),
                     balanceOfC()
                 );
-        
+    
         //If they are all the same we dont need to do anything
         if( ratioA == ratioB && ratioB == ratioC) return;
 
@@ -1207,6 +1209,14 @@ abstract contract Tripod {
         return IERC20(tokenC).balanceOf(address(this));
     }
 
+    function getRewardTokens() public view returns(address[] memory) {
+        return rewardTokens;
+    }
+
+    function getRewardTokensLength() public view returns(uint256) {
+        return rewardTokens.length;
+    }
+
     function balanceOfPool() public view virtual returns (uint256);
 
     /*
@@ -1224,7 +1234,9 @@ abstract contract Tripod {
         return _balances;
     }
 
-    function balanceOfStake() public view virtual returns (uint256 _balance) {}
+    function balanceOfStake() public view virtual returns (uint256 _balance);
+
+    function totalLpBalance() public view virtual returns (uint256);
 
     function balanceOfTokensInLP()
         public
@@ -1362,7 +1374,7 @@ abstract contract Tripod {
      * @param _contract, spender contract
      * @param _token, token to approve spend
      * @param _amount, _amoun to approve
-     */
+    */
     function _checkAllowance(
         address _contract,
         IERC20 _token,

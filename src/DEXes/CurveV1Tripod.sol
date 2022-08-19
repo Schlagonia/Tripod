@@ -250,7 +250,7 @@ contract CurveV1Tripod is NoHedgeTripod {
         return rewardsContract.balanceOf(address(this));
     }
 
-    function totalLpBalance() public view returns (uint256) {
+    function totalLpBalance() public view override returns (uint256) {
         unchecked {
             return balanceOfPool() + balanceOfStake();
         }
