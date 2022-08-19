@@ -488,8 +488,10 @@ abstract contract Tripod {
             return true;
         }
 
-        //Check if we are past our max time
-        if(block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime) {
+        //Check if we have assets and are past our max time
+        if(totalLpBalance() > 0 &&
+            block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime
+        ) {
             return true;
         }
 
@@ -1207,6 +1209,14 @@ abstract contract Tripod {
         return IERC20(tokenC).balanceOf(address(this));
     }
 
+    function getRewardTokens() public view returns(address[] memory) {
+        return rewardTokens;
+    }
+
+    function getRewardTokensLength() public view returns(uint256) {
+        return rewardTokens.length;
+    }
+
     function balanceOfPool() public view virtual returns (uint256);
 
     /*
@@ -1224,7 +1234,9 @@ abstract contract Tripod {
         return _balances;
     }
 
-    function balanceOfStake() public view virtual returns (uint256 _balance) {}
+    function balanceOfStake() public view virtual returns (uint256 _balance);
+
+    function totalLpBalance() public view virtual returns (uint256);
 
     function balanceOfTokensInLP()
         public

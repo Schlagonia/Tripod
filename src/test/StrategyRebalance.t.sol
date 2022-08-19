@@ -45,6 +45,7 @@ contract RebalanceTest is StrategyFixture {
         console.log("B ratio ", bRatio, " profit was ", bProfit);
         console.log("C ratio ", cRatio, " profit was ", cProfit);
 
+        assertGt(aProfit, 0);
         assertGt(aRatio, 1e18);        
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
