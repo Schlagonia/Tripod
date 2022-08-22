@@ -5,7 +5,6 @@ pragma experimental ABIEncoderV2;
 // Import necessary libraries and interfaces:
 // NoHedgetripod to inherit from
 import "../Hedges/NoHedgeTripod.sol";
-import "forge-std/console.sol";
 import { IBalancerVault } from "../interfaces/Balancer/IBalancerVault.sol";
 import { IBalancerPool } from "../interfaces/Balancer/IBalancerPool.sol";
 import { IAsset } from "../interfaces/Balancer/IAsset.sol";
@@ -46,9 +45,6 @@ contract BalancerTripod is NoHedgeTripod {
         ICurveFi(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
     //Index mapping provider token to its crv index 
     mapping (address => int128) internal curveIndex;
-
-    //Array of the provider tokens to use during lp functions
-    address[3] internal tokens;
 
     /***
         Balancer specific variables
@@ -104,7 +100,7 @@ contract BalancerTripod is NoHedgeTripod {
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, pool to LP
-     * @param _rewardsContract The Convex rewards contract specific to this LP token
+     * @param _rewardsContract The Aura rewards contract specific to this LP token
      */
     constructor(
         address _providerA,
@@ -125,7 +121,7 @@ contract BalancerTripod is NoHedgeTripod {
 	 * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, pool to LP
-     * @param _rewardsContract The Convex rewards contract specific to this LP token
+     * @param _rewardsContract The Aura rewards contract specific to this LP token
      */
     function initialize(
         address _providerA,
@@ -142,7 +138,7 @@ contract BalancerTripod is NoHedgeTripod {
     /*
      * @notice
      *  Initialize CurveTripod specifics
-     * @param _rewardsContract, The Convex rewards contract specific to this LP token
+     * @param _rewardsContract, The Aura rewards contract specific to this LP token
      */
     function _initializeBalancerTripod(address _rewardsContract) internal {
         rewardsContract = IConvexRewards(_rewardsContract);
@@ -155,7 +151,7 @@ contract BalancerTripod is NoHedgeTripod {
         poolId = IBalancerPool(pool).getPoolId();
 
         // The reward tokens are the tokens provided to the pool
-        //This will update them based on current rewards on convex
+        //This will update them based on current rewards on Aura
         _updateRewardTokens();
 
         //Set array of pool Infos's for each token
@@ -184,7 +180,7 @@ contract BalancerTripod is NoHedgeTripod {
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, pool to LP
-     * @param _rewardsContract The Convex rewards contract specific to this LP token
+     * @param _rewardsContract The Aura rewards contract specific to this LP token
      * @return newTripod, address of newly deployed tripod
      */
     function cloneBalancerTripod(
@@ -289,12 +285,6 @@ contract BalancerTripod is NoHedgeTripod {
         return rewardsContract.balanceOf(address(this));
     }
 
-    function totalLpBalance() public view override returns (uint256) {
-        unchecked {
-            return balanceOfPool() + balanceOfStake();
-        }
-    }
-
     /*
      * @notice
      *  Function returning the current balance of each token in the LP position
@@ -318,7 +308,7 @@ contract BalancerTripod is NoHedgeTripod {
  
         unchecked {
             //Calculate vp -> dollars
-            uint256 lpDollarValue = lpBalance * virtualPrice / (10 ** IERC20Extended(pool).decimals());
+            uint256 lpDollarValue = lpBalance * virtualPrice / 1e18;
     
             //div by 3
             uint256 third = lpDollarValue * 3_333 / 10_000;
@@ -339,7 +329,7 @@ contract BalancerTripod is NoHedgeTripod {
         // Initialize the array to same length as reward tokens
         uint256[] memory _amountPending = new uint256[](rewardTokens.length);
 
-        //Save the earned CrV rewards to 0 where crv will be
+        //Save the earned Bal rewards to 0 where bal will be
         _amountPending[0] = 
             rewardsContract.earned(address(this)) + 
                 IERC20(balToken).balanceOf(address(this));
@@ -359,7 +349,7 @@ contract BalancerTripod is NoHedgeTripod {
     /*
      * @notice
      *  Function used internally to open the LP position: 
-     *     
+     *  Creates a batchSwap for each provider token
      * @return the amounts actually invested for each token
      */
     function createLP() internal override returns (uint256, uint256, uint256) {
@@ -489,6 +479,7 @@ contract BalancerTripod is NoHedgeTripod {
     *   harvesExtras will determine if we claim rewards, normally should be true
     */
     function withdrawLP(uint256 amount) internal override {
+        if(amount == 0) return;
 
         rewardsContract.withdrawAndUnwrap(
             amount, 
@@ -616,7 +607,7 @@ contract BalancerTripod is NoHedgeTripod {
 
             //Get the latest oracle price for bal * amount of bal / (1e8 + (diff of token decimals to bal decimals)) to adjust oracle price that is 1e8
             return uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
-        } else {
+        } else if(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC){
 
             // Call the quote function in CRV pool
             return curvePool.get_dy(
@@ -624,15 +615,15 @@ contract BalancerTripod is NoHedgeTripod {
                 curveIndex[_tokenTo], 
                 _amountIn
             );
+        } else {
+            return 0;
         }
     }
 
     /*
     * @notice
     *   function used internally to sell the available Bal and Aura tokens
-    * @param _to, the token to sell bal to
-    * @param _amountIn, the amount of bal to sell
-    * @param _amouontOut, the min amount to get out
+    *   We sell bal/Aura -> WETH -> USDC due to the available liquidity
     */
     function sellRewrds() internal {
         IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](4);
@@ -686,7 +677,7 @@ contract BalancerTripod is NoHedgeTripod {
         assets[2] = IAsset(referenceToken);
         assets[3] = IAsset(usdcAddress);
         
-        //Only min we need to set is for the Weth balance going in
+        //Only min we need to set is for the balances going in
         int[] memory limits = new int[](4);
         limits[0] = int(balBalance);
         limits[1] = int(auraBalance);
@@ -968,7 +959,11 @@ contract BalancerTripod is NoHedgeTripod {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
     }
 
-    function getFundManagement() internal view returns (IBalancerVault.FundManagement memory fundManagement) {
+    function getFundManagement() 
+        internal 
+        view 
+        returns (IBalancerVault.FundManagement memory fundManagement) 
+    {
         fundManagement = IBalancerVault.FundManagement(
                 address(this),
                 false,

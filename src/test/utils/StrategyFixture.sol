@@ -78,7 +78,7 @@ contract StrategyFixture is ExtendedTest {
         poolUsing = pools[2];
 
         weth = IERC20(tokenAddrs["WETH"]);
-        console.log("Deploying vaults and providers");
+        //console.log("Deploying vaults and providers");
         for (uint8 i = 0; i < poolUsing.wantTokens.length; ++i) {
             string memory _tokenToTest = poolUsing.wantTokens[i];
             IERC20 _want = IERC20(tokenAddrs[_tokenToTest]);
@@ -102,7 +102,7 @@ contract StrategyFixture is ExtendedTest {
             vm.label(address(_strategy), string(abi.encodePacked(_tokenToTest, "Strategy")));
             vm.label(address(_want), _tokenToTest);
         }
-        console.log("Deploying tripod");
+        //console.log("Deploying tripod");
         //Deploye Tripod Strategy
         deployTripod(
             address(assetFixtures[0].strategy),
@@ -114,7 +114,7 @@ contract StrategyFixture is ExtendedTest {
             poolUsing.rewardsContract
         );
 
-        console.log("Setting tripod");
+        //console.log("Setting tripod");
         //Add the tripod to each providor strategy
         setTripod();
 
@@ -180,7 +180,7 @@ contract StrategyFixture is ExtendedTest {
             _pool,
             _rewardsContract
         );
-        console.log("New tripod  created");
+        //console.log("New tripod  created");
         vm.prank(gov);
         tripod.setKeeper(keeper);
     }
