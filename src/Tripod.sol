@@ -6,7 +6,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-//import "forge-std/console.sol";
+
 import "./interfaces/IERC20Extended.sol";
 
 import {IVault} from "./interfaces/Vault.sol";
@@ -1209,10 +1209,29 @@ abstract contract Tripod {
         return IERC20(tokenC).balanceOf(address(this));
     }
 
+    /*
+    * @notice
+    *   Public funtion that will return the total LP balance held by the Tripod
+    * @return both the staked and unstaked balances
+    */
+    function totalLpBalance() public view virtual returns (uint256) {
+        unchecked {
+            return balanceOfPool() + balanceOfStake();
+        }
+    }
+
+    /*
+    * @notice
+    *   Function used return the array of reward Tokens for this Tripod
+    */
     function getRewardTokens() public view returns(address[] memory) {
         return rewardTokens;
     }
 
+    /*
+    * @notice
+    *   Public function return the amount of reward tokens we currently have
+    */
     function getRewardTokensLength() public view returns(uint256) {
         return rewardTokens.length;
     }
@@ -1235,8 +1254,6 @@ abstract contract Tripod {
     }
 
     function balanceOfStake() public view virtual returns (uint256 _balance);
-
-    function totalLpBalance() public view virtual returns (uint256);
 
     function balanceOfTokensInLP()
         public
