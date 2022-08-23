@@ -176,6 +176,7 @@ contract StrategyILTest is StrategyFixture {
         assertRelApproxEq( _c, deposited[2], DELTA);
 
         vm.prank(keeper);
+        //Harvest would fail if IL caused more than a .1% loss
         tripod.harvest();
 
         uint256 aProfit = assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault));

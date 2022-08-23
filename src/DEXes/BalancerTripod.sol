@@ -903,7 +903,7 @@ contract BalancerTripod is NoHedgeTripod {
         //Claim all outstanding rewards
         getReward();
         //Swap out of all Reward Tokens
-        swapRewardTokens();
+        sellRewrds();
         //Create LP tokens
         createUSDCLP();
         //Stake LP tokens

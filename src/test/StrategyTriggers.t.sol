@@ -63,6 +63,23 @@ contract StrategyTriggerTest is StrategyFixture {
         skip(tripod.maxEpochTime() + 1);
 
         assertTrue(tripod.harvestTrigger(3), "check 5");
+
+        vm.prank(gov);
+        tripod.setDontInvestWant(true);
+
+        skip(1);
+        vm.prank(keeper);
+        tripod.harvest();
+
+        skip(1);
+        //Should have credit available but dontInvestWant should stop it 
+        assertTrue(!tripod.harvestTrigger(1), "Check 6");
+
+        vm.prank(gov);
+        tripod.setDontInvestWant(false);
+
+        assertTrue(tripod.harvestTrigger(1), "Check 7");
+
     }
 
     function testTendTrigger(uint256 _amount) public {
@@ -93,30 +110,6 @@ contract StrategyTriggerTest is StrategyFixture {
     function testTend(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
-
-        //Determining where tripod will swap to in order to compare post invested balances
-        address tokenTo;
-        if (tripod.referenceToken() == tripod.tokenA() ||
-            tripod.referenceToken() == tripod.tokenB() ||
-            tripod.referenceToken() == tripod.tokenC()
-        ) {
-            tokenTo = tripod.referenceToken();
-        } else {
-            (uint256 ratioA, uint256 ratioB, uint256 ratioC) = tripod.getRatios(
-                    tripod.balanceOfA(),
-                    tripod.balanceOfB(),
-                    tripod.balanceOfC()
-                );
-       
-                //If everything is equal use A   
-                if(ratioA <= ratioB && ratioA <= ratioC) {
-                    tokenTo = tripod.tokenA();
-                } else if(ratioB <= ratioC) {
-                    tokenTo = tripod.tokenB();
-                } else {
-                    tokenTo = tripod.tokenC();
-                }
-        }
         
         uint256 stakedBalance = tripod.balanceOfStake();
 

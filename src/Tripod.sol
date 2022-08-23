@@ -367,7 +367,7 @@ abstract contract Tripod {
     */
     function _closeAllPositions() internal {
         // Check that we have a position to close
-        if (balanceOfPool() == 0 && balanceOfStake() == 0) {
+        if (totalLpBalance() == 0) {
             return;
         }
 
@@ -438,8 +438,7 @@ abstract contract Tripod {
         }
 
         require(
-            balanceOfStake() == 0 &&
-                balanceOfPool() == 0 &&
+            totalLpBalance() == 0 &&
                 invested[tokenA] == 0 &&
                 invested[tokenB] == 0 &&
                 invested[tokenC] == 0,
@@ -510,9 +509,9 @@ abstract contract Tripod {
         returns (bool) 
     {
         return 
-            _provider.balanceOfWant() > 0 ||
-                IERC20(_provider.want()).balanceOf(address(this)) > 0 ||
-                    _provider.vault().creditAvailable(address(_provider)) > 0;
+            _provider.balanceOfWant() > minAmountToSell ||
+                IERC20(_provider.want()).balanceOf(address(this)) > minAmountToSell ||
+                    _provider.vault().creditAvailable(address(_provider)) > minAmountToSell;
     }
 
     /*
@@ -1054,9 +1053,9 @@ abstract contract Tripod {
 
     function getReward() internal virtual;
 
-    function depositLP() internal virtual {}
+    function depositLP() internal virtual;
 
-    function withdrawLP(uint256 amount) internal virtual {}
+    function withdrawLP(uint256 amount) internal virtual;
 
     /*
      * @notice
@@ -1268,6 +1267,7 @@ abstract contract Tripod {
      * @notice
      *  Function available to vault managers closing the tripod position manually
      *  This will attempt to rebalance properly after withdraw.
+     *  Will set dontInvestWant == True so harvestTriggers dont return true
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
      * @param expectedBalanceC, expected balance of tokenC to receive
@@ -1277,6 +1277,7 @@ abstract contract Tripod {
         uint256 expectedBalanceB,
         uint256 expectedBalanceC
     ) external onlyVaultManagers {
+        dontInvestWant = true;
         uint256 _a = balanceOfA();
         uint256 _b = balanceOfB();
         uint256 _c = balanceOfC();
@@ -1300,6 +1301,7 @@ abstract contract Tripod {
     /*
      * @notice
      *  Function available to vault managers closing the LP position manually
+     *  Will set dontInvestWant == True so harvestTriggers dont return true
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
      * @param expectedBalanceC, expected balance of tokenC to receive
@@ -1310,6 +1312,7 @@ abstract contract Tripod {
         uint256 expectedBalanceB,
         uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
+        dontInvestWant = true;
         withdrawLP(amount);
         uint256 _a = balanceOfA();
         uint256 _b = balanceOfB();
