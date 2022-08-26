@@ -21,8 +21,6 @@ interface ProviderStrategy {
     function balanceOfWant() external view returns (uint256);
 
     function harvest() external;
-
-    function launchHarvest() external view returns (bool);
 }
 
 interface IBaseFee {
