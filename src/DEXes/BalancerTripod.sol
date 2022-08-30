@@ -366,22 +366,25 @@ contract BalancerTripod is NoHedgeTripod {
             uint256 balance = IERC20(token).balanceOf(address(this));
             //Used to offset the array to the correct index
             uint256 j = i * 2;
+            //Swap fromt token -> bb-token
             swaps[j] = IBalancerVault.BatchSwapStep(
                 _poolInfo.poolId,
-                j,
-                j + 1,
+                j,  //index for token
+                j + 1,  //index for bb-token
                 balance,
                 abi.encode(0)
             );
 
+            //swap from bb-token -> main pool
             swaps[j+1] = IBalancerVault.BatchSwapStep(
                 poolId,
-                j + 1,
-                6,
+                j + 1,  //index for bb-token
+                6,  //index for main pool
                 0,
                 abi.encode(0)
             );
 
+            //Match the index used with the correct address and balance
             assets[j] = IAsset(token);
             assets[j+1] = IAsset(_poolInfo.bbPool);
             limits[j] = int(balance);
@@ -428,22 +431,25 @@ contract BalancerTripod is NoHedgeTripod {
         for (uint256 i; i < 3; i ++) {
             _poolInfo = poolInfo[i];
             uint256 j = i * 2;
+            //Swap from main pool -> bb-token
             swaps[j] = IBalancerVault.BatchSwapStep(
                 poolId,
-                6,
-                j,
+                6,  //Index used for main pool
+                j,  //Index for bb-token pool
                 j == 0 ? _amount - (toBurn * 2) : toBurn, //To make sure we burn all of the LP
                 abi.encode(0)
             );
 
+            //swap from bb-token -> token
             swaps[j+1] = IBalancerVault.BatchSwapStep(
                 _poolInfo.poolId,
-                j,
-                j + 1,
+                j,  //Index used for bb-token pool
+                j + 1,  //Index used for token
                 0,
                 abi.encode(0)
             );
 
+            //Match the index used with the applicable address
             assets[j] = IAsset(_poolInfo.bbPool);
             assets[j+1] = IAsset(_poolInfo.token);
         }
@@ -524,8 +530,8 @@ contract BalancerTripod is NoHedgeTripod {
         //Sell tokenFrom -> bb-tokenFrom
         swaps[0] = IBalancerVault.BatchSwapStep(
             _fromPoolInfo.poolId,
-            0,
-            1,
+            0,  //Index to use for tokenFrom
+            1,  //Index to use for bb-tokenFrom
             _amountIn,
             abi.encode(0)
         );
@@ -533,8 +539,8 @@ contract BalancerTripod is NoHedgeTripod {
         //bb-tokenFrom -> bb-tokenTo
         swaps[1] = IBalancerVault.BatchSwapStep(
             poolId,
-            1,
-            2,
+            1,  //Index to use for bb-tokenFrom
+            2,  //Index to use for bb-tokenTo
             0,
             abi.encode(0)
         );
@@ -542,13 +548,13 @@ contract BalancerTripod is NoHedgeTripod {
         //bb-tokenTo -> tokenTo
         swaps[2] = IBalancerVault.BatchSwapStep(
             _toPoolInfo.poolId ,
-            2,
-            3,
+            2,  //Index to use for bb-tokenTo
+            3,  //Index to use for tokenTo
             0,
             abi.encode(0)
         );
 
-        //Match the token address with the desired index for this trade
+        //Match the token address with the index used above for this trade
         IAsset[] memory assets = new IAsset[](4);
         assets[0] = IAsset(_tokenFrom);
         assets[1] = IAsset(_fromPoolInfo.bbPool);
@@ -630,15 +636,15 @@ contract BalancerTripod is NoHedgeTripod {
         
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
         uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
- 
+
         //Cant swap 0
         if(balBalance == 0 || auraBalance == 0) return;
 
         //Sell bal -> weth
         swaps[0] = IBalancerVault.BatchSwapStep(
             balEthPoolId,
-            0,
-            2,
+            0,  //Index to use for Bal
+            2,  //index to use for Weth
             balBalance,
             abi.encode(0)
         );
@@ -646,8 +652,8 @@ contract BalancerTripod is NoHedgeTripod {
         //Sell WETH -> USDC due to higher liquidity
         swaps[1] = IBalancerVault.BatchSwapStep(
             ethUsdcPoolId,
-            2,
-            3,
+            2,  //index to use for Weth
+            3,  //Index to use for usdc
             0,
             abi.encode(0)
         );
@@ -655,8 +661,8 @@ contract BalancerTripod is NoHedgeTripod {
         //Sell Aura -> Weth
         swaps[2] = IBalancerVault.BatchSwapStep(
             auraEthPoolId,
-            1,
-            2,
+            1,  //Index to use for Aura
+            2,  //index to use for Weth
             auraBalance,
             abi.encode(0)
         );
@@ -664,20 +670,20 @@ contract BalancerTripod is NoHedgeTripod {
         //Sell WETH -> USDC due to higher liquidity
         swaps[3] = IBalancerVault.BatchSwapStep(
             ethUsdcPoolId,
-            2,
-            3,
+            2,  //index to use for Weth
+            3,  //index to use for usdc
             0,
             abi.encode(0)
         );
 
-        //Match the token address with the desired index for this trade
+        //Match the token address with the applicable index from above for this trade
         IAsset[] memory assets = new IAsset[](4);
         assets[0] = IAsset(balToken);
         assets[1] = IAsset(auraToken);
         assets[2] = IAsset(referenceToken);
         assets[3] = IAsset(usdcAddress);
         
-        //Only min we need to set is for the balances going in
+        //Only min we need to set is for the balances going in, match with their index
         int[] memory limits = new int[](4);
         limits[0] = int(balBalance);
         limits[1] = int(auraBalance);
@@ -758,8 +764,8 @@ contract BalancerTripod is NoHedgeTripod {
         //Sell reward -> weth
         swaps[0] = IBalancerVault.BatchSwapStep(
             _poolId,
-            0,
-            1,
+            0,  //Index to use for the reward we are selling
+            1,  //Index to use for WETH
             _amountIn,
             abi.encode(0)
         );
@@ -767,8 +773,8 @@ contract BalancerTripod is NoHedgeTripod {
         //Sell WETH -> USDC due to higher liquidity
         swaps[1] = IBalancerVault.BatchSwapStep(
             ethUsdcPoolId,
-            1,
-            2,
+            1,  //Index to use for WETH
+            2,  //Index to use for usdc
             0,
             abi.encode(0)
         );
@@ -862,24 +868,26 @@ contract BalancerTripod is NoHedgeTripod {
 
         swaps[0] = IBalancerVault.BatchSwapStep(
             _poolInfo.poolId,
-            0,
-            1,
+            0,  //Index to use for usdc
+            1,  //Index to use for bb-usdc
             balance,
             abi.encode(0)
         );
 
         swaps[1] = IBalancerVault.BatchSwapStep(
             poolId,
-            1,
-            2,
-            0,
+            1,  //Index to use for bb-usdc
+            2,  //Index to use for the main lp token
+            0, 
             abi.encode(0)
         );
 
+        //Match the address with the index we used above
         assets[0] = IAsset(usdcAddress);
         assets[1] = IAsset(_poolInfo.bbPool);
         assets[2] = IAsset(pool);
 
+        //Only need to set the usdc balance goin in
         limits[0] = int(balance);
         
         balancerVault.batchSwap(
