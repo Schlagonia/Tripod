@@ -158,4 +158,49 @@ contract ManualOpsTest is StrategyFixture {
         assertEq(tripod.getRewardTokensLength(), 2);
 
     }
+
+    function testChangeToSwapTo(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        depositAllVaultsAndHarvest(_amount);
+        skip(1);
+        deal(cvx, address(tripod), 4e18);
+        assertEq(IERC20(cvx).balanceOf(address(tripod)), 4e18);
+
+        vm.prank(address(666));
+        vm.expectRevert(bytes("!authorized"));
+        tripod.changeToSwapTo();
+
+        vm.prank(management);
+        tripod.changeToSwapTo();
+
+        IERC20 token = IERC20(tokenAddrs["DAI"]);
+        uint256 before = token.balanceOf(address(tripod));
+        //Make sure we can sell manually
+        vm.startPrank(management);
+        tripod.swapTokenForTokenManually(
+            cvx,
+            address(0),
+            4e18,
+            0,
+            false
+        );
+        vm.stopPrank();
+
+        assertGt(token.balanceOf(address(tripod)), before);
+        assertEq(IERC20(cvx).balanceOf(address(tripod)), 0);
+
+        //make sure we can add the dai into an lp token
+        uint256 beforeBal = tripod.totalLpBalance();
+        vm.prank(management);
+        tripod.tend();
+
+        assertGt(tripod.totalLpBalance(), beforeBal);
+
+        //Earn interest
+        skip(1 days);
+        setProvidersHealthCheck(false);
+        //Make sure a normal harvest works
+        vm.prank(keeper);
+        tripod.harvest();
+    }
 }

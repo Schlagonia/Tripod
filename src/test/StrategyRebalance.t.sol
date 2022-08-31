@@ -131,7 +131,7 @@ contract RebalanceTest is StrategyFixture {
 
     function testQuoteRebalanceCloseToReal(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
         skip(1);
         //earn profit
@@ -147,10 +147,14 @@ contract RebalanceTest is StrategyFixture {
             _c
         );
 
-        console.log("A ratio ", aRatio);
-        console.log("B ratio ", bRatio);
-        console.log("C ratio ", cRatio);
-
+        console.log("A ratio ", aRatio, "_a ", _a);
+        console.log("A deposited ", deposited[0]);
+        console.log("B ratio ", bRatio, "_b", _b);
+        console.log("B deposited ", deposited[1]);
+        console.log("C ratio ", cRatio, "_c ", _c);
+        console.log("C Deposited ", deposited[2]);
+        console.log("avg Ratio ", (aRatio + bRatio + cRatio) / 3);
+     
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
 
@@ -172,5 +176,6 @@ contract RebalanceTest is StrategyFixture {
         if(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault)) < _c) {
             assertRelApproxEq(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault)), _c, DELTA);
         }
+        
     }
 }

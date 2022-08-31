@@ -137,8 +137,8 @@ contract StrategyOperationsTest is StrategyFixture {
             fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 5_000);
         }
 
-        deal(crv, address(tripod), _amount/10);
-        deal(cvx, address(tripod), _amount/10);
+        deal(crv, address(tripod), _amount/100);
+        deal(cvx, address(tripod), _amount/100);
 
         setProvidersHealthCheck(false);
         // Harvest 2: Realize profit
