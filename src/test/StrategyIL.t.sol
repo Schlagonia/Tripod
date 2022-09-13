@@ -84,7 +84,8 @@ contract StrategyILTest is StrategyFixture {
             );
     }
 
-    /// Test Operations
+    ///This will swap one of the assets to through the balancer vault repeatedly to simulate IL
+    // We want to assure even if unbalanced we wont report losses
     function testSwaps(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < 1_000_000e18);
         uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);

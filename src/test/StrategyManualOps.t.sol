@@ -175,7 +175,7 @@ contract ManualOpsTest is StrategyFixture {
 
         IERC20 token = IERC20(tokenAddrs["DAI"]);
         uint256 before = token.balanceOf(address(tripod));
-        //Make sure we can sell manually
+        //Swap reward token and make sure it went to dai not usdc
         vm.startPrank(management);
         tripod.swapTokenForTokenManually(
             cvx,

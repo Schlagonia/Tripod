@@ -73,7 +73,7 @@ contract BalancerTripod is NoHedgeTripod {
     bytes32 internal constant ethUsdcPoolId =
         bytes32(0x96646936b91d6b9d7d0c47c496afbf3d6ec7b6f8000200000000000000000019);
     bytes32 internal constant ethDaiPoolId = 
-        bytes32(0x34809aedf93066b49f638562c42a9751edb36df5000200000000000000000223);
+        bytes32(0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a);
     //The pool Id for the pool we will swap eth through to a provider token
     bytes32 internal toSwapToPoolId;
     //Address of the token we are currently swapping to from eth

@@ -169,8 +169,6 @@ contract ProviderStrategy is BaseStrategyInitializable {
     {
         uint256 availableAssets = balanceOfWant();
         if (_amountNeeded > availableAssets) {
-            //Make sure we aren't reporting incorrect loss
-            require(TripodAPI(tripod).invested(address(want)) == 0, "Open Position");
             _liquidatedAmount = availableAssets;
             _loss = _amountNeeded - availableAssets;
         } else {
