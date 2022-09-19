@@ -1333,6 +1333,18 @@ abstract contract Tripod {
         }
     }
 
+    /*
+    * @notice
+    *   External function available to vault Managers to swap tokens manually
+    *   This function should be implemented with at least an onlyVaultManagers modifier
+    *       assuming swap logic checks the address parameters are legit, or onlyGovernance if
+    *        those checks are not in place
+    * @param tokenFrom, the token we will be swapping from
+    * @param tokenTo, the token we will be swapping to
+    * @param swapInAmount, the amount to swap from
+    * @param minOutAmount, the min of tokento we will accept
+    * @param core, bool repersenting if we are swapping the 3 provider tokens on both sides of the trade
+    */
     function swapTokenForTokenManually(
         address tokenFrom,
         address tokenTo,
