@@ -6,7 +6,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-import "forge-std/console.sol";
+
 import "./interfaces/IERC20Extended.sol";
 
 import {IVault} from "./interfaces/Vault.sol";
@@ -21,8 +21,6 @@ interface ProviderStrategy {
     function balanceOfWant() external view returns (uint256);
 
     function harvest() external;
-
-    function launchHarvest() external view returns (bool);
 }
 
 interface IBaseFee {
@@ -60,6 +58,8 @@ abstract contract Tripod {
 
     //Mapping of the Amounts that actually go into the LP position
     mapping(address => uint256) public invested;
+    //Mapping og the weights of each token when it goes in to 1e18
+    mapping(address => uint256) public investedWeight;
 
     //Address of the Keeper for this strategy
     address public keeper;
@@ -367,7 +367,7 @@ abstract contract Tripod {
     */
     function _closeAllPositions() internal {
         // Check that we have a position to close
-        if (balanceOfPool() == 0 && balanceOfStake() == 0) {
+        if (totalLpBalance() == 0) {
             return;
         }
 
@@ -438,8 +438,7 @@ abstract contract Tripod {
         }
 
         require(
-            balanceOfStake() == 0 &&
-                balanceOfPool() == 0 &&
+            totalLpBalance() == 0 &&
                 invested[tokenA] == 0 &&
                 invested[tokenB] == 0 &&
                 invested[tokenC] == 0,
@@ -455,6 +454,9 @@ abstract contract Tripod {
         invested[tokenA] = amountA + costHedgeA;
         invested[tokenB] = amountB + costHedgeB;
         invested[tokenC] = amountC + costHedgeC;
+
+        (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
+            getWeights(invested[tokenA], invested[tokenB], invested[tokenC]);
 
         // Deposit LPs (if any)
         depositLP();
@@ -488,8 +490,10 @@ abstract contract Tripod {
             return true;
         }
 
-        //Check if we are past our max time
-        if(block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime) {
+        //Check if we have assets and are past our max time
+        if(totalLpBalance() > 0 &&
+            block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime
+        ) {
             return true;
         }
 
@@ -508,9 +512,9 @@ abstract contract Tripod {
         returns (bool) 
     {
         return 
-            _provider.balanceOfWant() > 0 ||
-                IERC20(_provider.want()).balanceOf(address(this)) > 0 ||
-                    _provider.vault().creditAvailable(address(_provider)) > 0;
+            _provider.balanceOfWant() > minAmountToSell ||
+                IERC20(_provider.want()).balanceOf(address(this)) > minAmountToSell ||
+                    _provider.vault().creditAvailable(address(_provider)) > minAmountToSell;
     }
 
     /*
@@ -569,19 +573,15 @@ abstract contract Tripod {
                     balanceOfB(),
                     balanceOfC()
                 );
-        
-        console.log("ratio A ", ratioA);
-        console.log("ratio b ", ratioB);
-        console.log("ratio c ", ratioC);
+    
         //If they are all the same we dont need to do anything
         if( ratioA == ratioB && ratioB == ratioC) return;
 
-        // Calculate the average ratio. Could be at a loss does not matter here
+        // Calculate the weighted average ratio. Could be at a loss does not matter here
         uint256 avgRatio;
         unchecked{
-            avgRatio = (ratioA + ratioB + ratioC) / 3;
+            avgRatio = (ratioA * investedWeight[tokenA] + ratioB * investedWeight[tokenC] + ratioC * investedWeight[tokenC]);
         }
-        console.log("avg ratio ", avgRatio);
 
         //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
         //If two are higher than the average each has its diff traded to the third
@@ -592,7 +592,6 @@ abstract contract Tripod {
 
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
-                console.log("Swapping a -> b and C");
                 swapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
             } else if (ratioC > avgRatio) {
                 //swapping A and C -> B
@@ -654,7 +653,9 @@ abstract contract Tripod {
             //Used for % calcs
             totalDiff = (avgRatio - token0Ratio) + (avgRatio - token1Ratio);
             //How much of the amount to be swapped is owed to token0
-            swapTo0 = amountToSell * (avgRatio - token0Ratio) / totalDiff;
+            swapTo0 = (avgRatio - token0Ratio) / totalDiff;
+            needed0 = invested[token0Address] * avgRatio / RATIO_PRECISION;
+            needed1 = invested[token1Address] * avgRatio / RATIO_PRECISION;
             //To assure we dont sell to much 
             swapTo1 = amountToSell - swapTo0;
         }
@@ -1022,6 +1023,24 @@ abstract contract Tripod {
         }
     }
 
+    function getWeights(
+        uint256 investedA,
+        uint256 investedB,
+        uint256 investedC
+    ) public view returns (uint256 wA, uint256 wB, uint256 wC) {
+        uint256 adjustedA = investedA * (10 ** (18 - IERC20Extended(tokenA).decimals()));
+        unchecked {
+            uint256 adjustedA = investedA * (10 ** (18 - IERC20Extended(tokenA).decimals()));
+            uint256 adjustedB = investedB * (10 ** (18 - IERC20Extended(tokenA).decimals()));
+            uint256 adjustedC = investedC * (10 ** (18 - IERC20Extended(tokenA).decimals()));
+            uint256 total = adjustedA + adjustedB + adjustedC; 
+                        
+            wA = adjustedA * RATIO_PRECISION / total;
+            wB = adjustedB * RATIO_PRECISION / total;
+            wC = adjustedC * RATIO_PRECISION / total;
+        }
+    }
+
     function createLP() internal virtual returns (uint256, uint256, uint256);
 
     /*
@@ -1057,9 +1076,9 @@ abstract contract Tripod {
 
     function getReward() internal virtual;
 
-    function depositLP() internal virtual {}
+    function depositLP() internal virtual;
 
-    function withdrawLP(uint256 amount) internal virtual {}
+    function withdrawLP(uint256 amount) internal virtual;
 
     /*
      * @notice
@@ -1212,6 +1231,33 @@ abstract contract Tripod {
         return IERC20(tokenC).balanceOf(address(this));
     }
 
+    /*
+    * @notice
+    *   Public funtion that will return the total LP balance held by the Tripod
+    * @return both the staked and unstaked balances
+    */
+    function totalLpBalance() public view virtual returns (uint256) {
+        unchecked {
+            return balanceOfPool() + balanceOfStake();
+        }
+    }
+
+    /*
+    * @notice
+    *   Function used return the array of reward Tokens for this Tripod
+    */
+    function getRewardTokens() public view returns(address[] memory) {
+        return rewardTokens;
+    }
+
+    /*
+    * @notice
+    *   Public function return the amount of reward tokens we currently have
+    */
+    function getRewardTokensLength() public view returns(uint256) {
+        return rewardTokens.length;
+    }
+
     function balanceOfPool() public view virtual returns (uint256);
 
     /*
@@ -1229,7 +1275,7 @@ abstract contract Tripod {
         return _balances;
     }
 
-    function balanceOfStake() public view virtual returns (uint256 _balance) {}
+    function balanceOfStake() public view virtual returns (uint256 _balance);
 
     function balanceOfTokensInLP()
         public
@@ -1244,6 +1290,7 @@ abstract contract Tripod {
      * @notice
      *  Function available to vault managers closing the tripod position manually
      *  This will attempt to rebalance properly after withdraw.
+     *  Will set dontInvestWant == True so harvestTriggers dont return true
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
      * @param expectedBalanceC, expected balance of tokenC to receive
@@ -1253,6 +1300,7 @@ abstract contract Tripod {
         uint256 expectedBalanceB,
         uint256 expectedBalanceC
     ) external onlyVaultManagers {
+        dontInvestWant = true;
         uint256 _a = balanceOfA();
         uint256 _b = balanceOfB();
         uint256 _c = balanceOfC();
@@ -1261,6 +1309,8 @@ abstract contract Tripod {
         require(expectedBalanceA <= balanceOfA() - _a, "!sandwiched");
         require(expectedBalanceB <= balanceOfB() - _b, "!sandwiched");
         require(expectedBalanceC <= balanceOfC() - _c, "!sandwiched");
+        // reset invested balances or we wont be able to open up a position again
+        invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
     }
 
     /*
@@ -1274,6 +1324,7 @@ abstract contract Tripod {
     /*
      * @notice
      *  Function available to vault managers closing the LP position manually
+     *  Will set dontInvestWant == True so harvestTriggers dont return true
      * @param expectedBalanceA, expected balance of tokenA to receive
      * @param expectedBalanceB, expected balance of tokenB to receive
      * @param expectedBalanceC, expected balance of tokenC to receive
@@ -1284,6 +1335,7 @@ abstract contract Tripod {
         uint256 expectedBalanceB,
         uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
+        dontInvestWant = true;
         withdrawLP(amount);
         uint256 _a = balanceOfA();
         uint256 _b = balanceOfB();
@@ -1306,6 +1358,18 @@ abstract contract Tripod {
         }
     }
 
+    /*
+    * @notice
+    *   External function available to vault Managers to swap tokens manually
+    *   This function should be implemented with at least an onlyVaultManagers modifier
+    *       assuming swap logic checks the address parameters are legit, or onlyGovernance if
+    *        those checks are not in place
+    * @param tokenFrom, the token we will be swapping from
+    * @param tokenTo, the token we will be swapping to
+    * @param swapInAmount, the amount to swap from
+    * @param minOutAmount, the min of tokento we will accept
+    * @param core, bool repersenting if we are swapping the 3 provider tokens on both sides of the trade
+    */
     function swapTokenForTokenManually(
         address tokenFrom,
         address tokenTo,
