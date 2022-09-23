@@ -642,31 +642,41 @@ abstract contract Tripod {
         address toSwapToken,
         uint256 toSwapRatio,
         address token0Address,
-        uint256 token0Ratio,
+        uint256 /*token0Ratio*/,
         address token1Address,
-        uint256 token1Ratio
+        uint256 /*token1Ratio*/
     ) internal {
         uint256 amountToSell;
         //uint256 totalDiff;
         uint256 swapTo0;
-        uint256 swapTo1;
+        //uint256 swapTo1;
 
         unchecked {
             //Calculates the difference between current amount and desired amount in token terms
-            amountToSell = (toSwapRatio - avgRatio) * invested[toSwapToken] / RATIO_PRECISION;
-            console.log("We will be selling: ", amountToSell, " of token ", IERC20Extended(toSwapToken).name());
+            uint256 a0 = invested[toSwapToken];
+            amountToSell = (toSwapRatio - avgRatio) * a0 / RATIO_PRECISION;
+            uint256 decimal = (10 ** IERC20Extended(toSwapToken).decimals());
+            uint256 a1 = IERC20(toSwapToken).balanceOf(address(this));
+            uint256 b0 = invested[token0Address];
+            uint256 b1 = IERC20(token0Address).balanceOf(address(this));
+            console.log("We will be selling: ", amountToSell);//, " of token ", IERC20Extended(toSwapToken).name());
+            console.log("b0 = ", b0);
+            console.log("a0 = ", a0);
+            console.log("a1 = ", a1);
+            console.log("b1 = ", b1);
+            //p = (1/en)(((b0/a0)a1-n)-b1)
+            uint256 e = quote(toSwapToken, token0Address, decimal);
 
-            //p = (1/en)((b0/a0)a1-n)-b1
-            uint256 e = quote(toSwapToken, token0Address, 1 * (10 ** IERC20Extended(toSwapToken).decimals()));
-            uint256 p = (RATIO_PRECISION / (e * amountToSell)) * 
-                ((invested[token0Address] / invested[toSwapToken]) * (IERC20(toSwapToken).balanceOf(address(this)) - amountToSell)) - 
-                        IERC20(token0Address).balanceOf(address(this));
- 
+            uint256 p = (RATIO_PRECISION * (10 ** IERC20Extended(token0Address).decimals()) / (e * amountToSell)) * ((b0 * (a1 - amountToSell) / a0) - b1);
+            //uint256 p = ((b0 * (a1 - amountToSell)) / (a0 * e * amountToSell)) - (b1 / (e * amountToSell));
             console.log("e is: ", e, "p is: ", p);
+            console.log("1/en = ", (RATIO_PRECISION * (10 ** IERC20Extended(token0Address).decimals()) / (e * amountToSell)));
+            console.log("((b0/a0)a1-n) = ", ((b0 * (a1 - amountToSell) / a0) - b1));
+            
             swapTo0 = amountToSell * p / RATIO_PRECISION;
             //To assure we dont sell to much 
-            swapTo1 = amountToSell - swapTo0;
-            console.log("Swapping : ", swapTo0, "to token 0, and ", swapTo1);
+            //swapTo1 = amountToSell - swapTo0;
+            console.log("Swapping : ", swapTo0, "to token 0, and ", amountToSell - swapTo0);
         }
 
         swap(
@@ -679,7 +689,7 @@ abstract contract Tripod {
         swap(
             toSwapToken, 
             token1Address, 
-            swapTo1, 
+            amountToSell - swapTo0, 
             0
         );
     }   
