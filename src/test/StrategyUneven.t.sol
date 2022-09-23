@@ -238,7 +238,7 @@ contract StrategyUnevenTest is StrategyFixture {
         assertGt(aRatio, 1e18);        
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
-        //assertTrue (false);
+        assertTrue (false);
     }
 /*
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
