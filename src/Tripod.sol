@@ -8,7 +8,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./interfaces/IERC20Extended.sol";
-
+import "forge-std/console.sol";
 import {IVault} from "./interfaces/Vault.sol";
 
 interface ProviderStrategy {
@@ -580,8 +580,12 @@ abstract contract Tripod {
         // Calculate the weighted average ratio. Could be at a loss does not matter here
         uint256 avgRatio;
         unchecked{
-            avgRatio = (ratioA * investedWeight[tokenA] + ratioB * investedWeight[tokenC] + ratioC * investedWeight[tokenC]);
+            avgRatio = (ratioA * investedWeight[tokenA] + ratioB * investedWeight[tokenB] + ratioC * investedWeight[tokenC]) / RATIO_PRECISION;
         }
+        console.log("Avg ratio is ", avgRatio);
+        console.log("Ratio A ", ratioA);
+        console.log("Ratio B ", ratioB);
+        console.log("Ratio C ", ratioC);
 
         //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
         //If two are higher than the average each has its diff traded to the third
@@ -643,27 +647,33 @@ abstract contract Tripod {
         uint256 token1Ratio
     ) internal {
         uint256 amountToSell;
-        uint256 totalDiff;
+        //uint256 totalDiff;
         uint256 swapTo0;
         uint256 swapTo1;
 
         unchecked {
             //Calculates the difference between current amount and desired amount in token terms
             amountToSell = (toSwapRatio - avgRatio) * invested[toSwapToken] / RATIO_PRECISION;
-            //Used for % calcs
-            totalDiff = (avgRatio - token0Ratio) + (avgRatio - token1Ratio);
-            //How much of the amount to be swapped is owed to token0
-            swapTo0 = (avgRatio - token0Ratio) / totalDiff;
-            needed0 = invested[token0Address] * avgRatio / RATIO_PRECISION;
-            needed1 = invested[token1Address] * avgRatio / RATIO_PRECISION;
+            console.log("We will be selling: ", amountToSell, " of token ", IERC20Extended(toSwapToken).name());
+
+            //p = (1/en)((b0/a0)a1-n)-b1
+            uint256 e = quote(toSwapToken, token0Address, 1 * (10 ** IERC20Extended(toSwapToken).decimals()));
+            uint256 p = (RATIO_PRECISION / (e * amountToSell)) * 
+                ((invested[token0Address] * (IERC20(toSwapToken).balanceOf(address(this)) - amountToSell)) / 
+                    invested[toSwapToken]) - 
+                        IERC20(token0Address).balanceOf(address(this));
+ 
+            console.log("e is: ", e, "p is: ", p);
+            swapTo0 = amountToSell * p / RATIO_PRECISION;
             //To assure we dont sell to much 
             swapTo1 = amountToSell - swapTo0;
+            console.log("Swapping : ", swapTo0, "to token 0, and ", swapTo1);
         }
 
         swap(
             toSwapToken, 
             token0Address, 
-            swapTo0, 
+            swapTo0,
             0
         );
 
@@ -704,7 +714,7 @@ abstract contract Tripod {
             toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
             toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
         }
-
+        console.log("Swapping two to one, ", toSwapFrom0, "and ", toSwapFrom1);
         swap(
             token0Address, 
             toTokenAddress, 
@@ -1028,17 +1038,20 @@ abstract contract Tripod {
         uint256 investedB,
         uint256 investedC
     ) public view returns (uint256 wA, uint256 wB, uint256 wC) {
-        uint256 adjustedA = investedA * (10 ** (18 - IERC20Extended(tokenA).decimals()));
         unchecked {
             uint256 adjustedA = investedA * (10 ** (18 - IERC20Extended(tokenA).decimals()));
-            uint256 adjustedB = investedB * (10 ** (18 - IERC20Extended(tokenA).decimals()));
-            uint256 adjustedC = investedC * (10 ** (18 - IERC20Extended(tokenA).decimals()));
+            uint256 adjustedB = investedB * (10 ** (18 - IERC20Extended(tokenB).decimals()));
+            uint256 adjustedC = investedC * (10 ** (18 - IERC20Extended(tokenC).decimals()));
             uint256 total = adjustedA + adjustedB + adjustedC; 
+            console.log("Adjusted b is: ", adjustedB, "total is: ", total);
                         
             wA = adjustedA * RATIO_PRECISION / total;
             wB = adjustedB * RATIO_PRECISION / total;
             wC = adjustedC * RATIO_PRECISION / total;
         }
+        console.log("Weight of a: ", wA);
+        console.log("Weight of b: ", wB);
+        console.log("weight of c: ", wC);
     }
 
     function createLP() internal virtual returns (uint256, uint256, uint256);

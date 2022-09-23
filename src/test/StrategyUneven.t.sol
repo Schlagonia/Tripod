@@ -36,7 +36,7 @@ contract StrategyUnevenTest is StrategyFixture {
         
             //double the amount to deposit of a random vault
             if(j == i) {
-                toDeposit = toDeposit * 2;
+                toDeposit = toDeposit / 2;
             }
 
             deposit(_vault, user, address(_want), toDeposit);
@@ -206,7 +206,7 @@ contract StrategyUnevenTest is StrategyFixture {
             assertGt(_vault.pricePerShare(), bps[i]);
         }
     }
-
+*/
     function testProfitableRebalance(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         
@@ -238,8 +238,9 @@ contract StrategyUnevenTest is StrategyFixture {
         assertGt(aRatio, 1e18);        
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
+        assertTrue (false);
     }
-
+/*
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
@@ -278,7 +279,7 @@ contract StrategyUnevenTest is StrategyFixture {
         assertGt(bRatio2, bRatio);
         assertGt(cRatio2, cRatio);
     }
-*/
+
     function testQuoteRebalance(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         uint256[3] memory deposited = depositAllVaultsAndHarvestUneven(_amount);
@@ -321,7 +322,7 @@ contract StrategyUnevenTest is StrategyFixture {
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }
-/*
+
     function testQuoteRebalanceCloseToReal(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvestUneven(_amount);
