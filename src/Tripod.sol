@@ -659,8 +659,7 @@ abstract contract Tripod {
             //p = (1/en)((b0/a0)a1-n)-b1
             uint256 e = quote(toSwapToken, token0Address, 1 * (10 ** IERC20Extended(toSwapToken).decimals()));
             uint256 p = (RATIO_PRECISION / (e * amountToSell)) * 
-                ((invested[token0Address] * (IERC20(toSwapToken).balanceOf(address(this)) - amountToSell)) / 
-                    invested[toSwapToken]) - 
+                ((invested[token0Address] / invested[toSwapToken]) * (IERC20(toSwapToken).balanceOf(address(this)) - amountToSell)) - 
                         IERC20(token0Address).balanceOf(address(this));
  
             console.log("e is: ", e, "p is: ", p);
