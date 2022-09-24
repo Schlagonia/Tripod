@@ -17,7 +17,7 @@ contract StrategyShutdownTest is StrategyFixture {
 
     function testVaultShutdownCanWithdraw(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
         //Pick a random vault to shutdown
         uint256 index = _amount % 3;
@@ -36,7 +36,7 @@ contract StrategyShutdownTest is StrategyFixture {
         }
 
         skip(7 hours);
-        uint256 preBalance = _provider.estimatedTotalAssets();
+        //uint256 preBalance = _provider.estimatedTotalAssets();
         // Set Emergency
         vm.prank(gov);
         _vault.setEmergencyShutdown(true);
@@ -53,7 +53,7 @@ contract StrategyShutdownTest is StrategyFixture {
         vm.prank(user);
         _vault.withdraw();
         console.log("Withdrew ", _want.balanceOf(user));
-        assertGe(_want.balanceOf(user), preBalance);
+        assertGe(_want.balanceOf(user), deposited[index]);
     }
 
     function testBasicShutdown(uint256 _amount) public {

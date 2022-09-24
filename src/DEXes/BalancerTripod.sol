@@ -15,17 +15,6 @@ import {ITradeFactory} from "../interfaces/ySwaps/ITradeFactory.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
-interface IFeedRegistry {
-    function getFeed(address, address) external view returns (address);
-    function latestRoundData(address, address) external view returns (
-        uint80 roundId,
-        int256 answer,
-        uint256 startedAt,
-        uint256 updatedAt,
-        uint80 answeredInRound
-    );
-}
-
 contract BalancerTripod is NoHedgeTripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -440,20 +429,21 @@ contract BalancerTripod is NoHedgeTripod {
         IAsset[] memory assets = new IAsset[](7);
         int[] memory limits = new int[](7);
         //Burn a third for each token
-        uint256 toBurn = _amount * 3_333 / 10_000;
+        uint256 burnt;
 
         //Need seperate swaps for each provider token
         //Each swap goes mainPool -> bb-token -> token
         PoolInfo memory _poolInfo;
         for (uint256 i; i < 3; i ++) {
             _poolInfo = poolInfo[i];
+            uint256 weightedToBurn = _amount * investedWeight[_poolInfo.token] / RATIO_PRECISION;
             uint256 j = i * 2;
             //Swap from main pool -> bb-token
             swaps[j] = IBalancerVault.BatchSwapStep(
                 poolId,
                 6,  //Index used for main pool
                 j,  //Index for bb-token pool
-                j == 0 ? _amount - (toBurn * 2) : toBurn, //To make sure we burn all of the LP
+                i == 2 ? _amount - burnt : weightedToBurn, //To make sure we burn all of the LP
                 abi.encode(0)
             );
 
@@ -466,6 +456,8 @@ contract BalancerTripod is NoHedgeTripod {
                 abi.encode(0)
             );
 
+            //adjust the already burnt LP amount
+            burnt += weightedToBurn;
             //Match the index used with the applicable address
             assets[j] = IAsset(_poolInfo.bbPool);
             assets[j+1] = IAsset(_poolInfo.token);

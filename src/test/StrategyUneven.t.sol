@@ -51,7 +51,7 @@ contract StrategyUnevenTest is StrategyFixture {
         skip(1);
         harvestTripod();
     }
-/*
+
     /// Test Operations
     function testStrategyOperation(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
@@ -206,7 +206,7 @@ contract StrategyUnevenTest is StrategyFixture {
             assertGt(_vault.pricePerShare(), bps[i]);
         }
     }
-*/
+
     function testProfitableRebalance(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         
@@ -238,9 +238,9 @@ contract StrategyUnevenTest is StrategyFixture {
         assertGt(aRatio, 1e18);        
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
-        assertTrue (false);
+        //assertTrue (false);
     }
-/*
+
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
@@ -367,5 +367,5 @@ contract StrategyUnevenTest is StrategyFixture {
             assertRelApproxEq(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[0].vault)), _c, DELTA);
         }
     }
-*/
+
 }
