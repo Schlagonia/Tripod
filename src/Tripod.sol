@@ -660,7 +660,6 @@ abstract contract Tripod {
         uint256 swapTo1;
 
         unchecked {
-            //Calculates the difference between current amount and desired amount in token terms
             uint256 a0 = invested[toSwapToken];
             uint256 a1 = IERC20(toSwapToken).balanceOf(address(this));
             uint256 b0 = invested[token0Address];
@@ -668,12 +667,6 @@ abstract contract Tripod {
 
             //Calculates the difference between current amount and desired amount in token terms
             amountToSell = (toSwapRatio - avgRatio) * a0 / RATIO_PRECISION;
-
-            console.log("We will be selling: ", amountToSell);
-            console.log("b0 = ", b0);
-            console.log("a0 = ", a0);
-            console.log("a1 = ", a1);
-            console.log("b1 = ", b1);
 
             uint256 decimal = IERC20Extended(toSwapToken).decimals();
             uint256 toDecimals = IERC20Extended(token0Address).decimals();
@@ -685,12 +678,8 @@ abstract contract Tripod {
 
             //P is the propotion of the amountToSell that gets swapped to tokenB repersented as 1e18
             //p = (1/en)*((b0(a1-n)/a0)-b1), where n=amountToSell
-            uint256 p = (RATIO_PRECISION * ((10 ** decimal) * precisionDiff) / (e * amountToSell)) * ((b0 * (a1 - amountToSell) / a0) - b1) / precisionDiff;
-
-            console.log("e is: ", e, "p is: ", p);
-            console.log("1/en = ", (RATIO_PRECISION * ((10 ** decimal)* precisionDiff) / (e * amountToSell)));
-            console.log("((b0/a0)a1-n) = ", ((b0 * (a1 - amountToSell) / a0) - b1));
-            console.log("PrecisionDiff ", precisionDiff);
+            uint256 p = (RATIO_PRECISION * ((10 ** decimal) * precisionDiff) / (e * amountToSell)) * 
+                            ((b0 * (a1 - amountToSell) / a0) - b1) / precisionDiff;
 
             swapTo0 = amountToSell * p / RATIO_PRECISION;
             //To assure we dont sell to much 
@@ -742,7 +731,7 @@ abstract contract Tripod {
             toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
             toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
         }
-        console.log("Swapping two to one, ", toSwapFrom0, "and ", toSwapFrom1);
+
         swap(
             token0Address, 
             toTokenAddress, 
@@ -818,6 +807,17 @@ abstract contract Tripod {
         return quoteRebalance(_aBalance, _bBalance, _cBalance);
     }
 
+    /*
+    * @notice
+    *   We use this struct in the qoute rebalance function for quoteSwapOneToTwo() in order to avoid stack to deep errors
+    * @param avgRatio, the weighted average return we want all tokens to end at
+    * @param toSwapToken, the token we are swapping from
+    * @param toSwapRatio, the current ratio for the token we are swapping from
+    * @param endingToSwap,  the amount of toSwapToken we expect to have before rebalancing, ie a1
+    * @param token0Address, the address of one of the tokens we are swapping to
+    * @param ending0Token, the amount of token0Address we expect to have before rebalancing, i.e b1
+    * @param token1Address, the address of the other token we are swapping to
+    */
     struct QuoteInfo {
         uint256 avgRatio;
         address toSwapToken;
@@ -922,13 +922,7 @@ abstract contract Tripod {
      *  This will quote swapping the extra tokens from the one that has returned the highest amount to the other two
      *  in relation to what they need attempting to make everything as equal as possible
      *  will return the absolute changes expected for each token, accounting will take place in parent function
-     * @param avgRatio, The average Ratio from their start we want to end all tokens as close to as possible
-     * @param toSwapToken, the token we will be swapping from to the other two
-     * @param toSwapRatio, The current ratio for the token we are swapping from
-     * @param token0Address, address of one of the tokens we are swapping to
-     * @param token0Ratio, the current ratio for the first token we are swapping to
-     * @param token1Address, address of the second token we are swapping to
-     * @param token1Ratio, the current ratio of the second token we are swapping to
+     * @param info, struct of all needed info OF token addresses and amounts
      * @return negative change in toSwapToken, positive change for token0, positive change for token1
     */
     function quoteSwapOneToTwo(QuoteInfo memory info) 
@@ -945,15 +939,15 @@ abstract contract Tripod {
             uint256 decimal = IERC20Extended(info.toSwapToken).decimals();
             uint256 toDecimals = IERC20Extended(info.token0Address).decimals();
             
-            //e = exchangeRate of token 1 tokenA in terms of tokenB
-            //uint256 e = quote(info.toSwapToken, info.token0Address, 10 ** decimal);
             //This is used to make sure we dont underflow on division if the token decimals differ
             uint256 precisionDiff = toDecimals > decimal ? 10 ** (toDecimals - decimal) : 1;
 
             //P is the propotion of the amountToSell that gets swapped to tokenB repersented as 1e18
-            //p = (1/en)*((b0(a1-n)/a0)-b1), where n=amountToSell
-            uint256 p = ((RATIO_PRECISION * ((10 ** decimal) * precisionDiff) / (quote(info.toSwapToken, info.token0Address, 10 ** decimal) * amountToSell)) * 
-                            ((invested[info.token0Address] * (info.endingToSwap - amountToSell) / invested[info.toSwapToken]) - info.ending0Token) / precisionDiff);
+            //p = (1/en)*((b0(a1-n)/a0)-b1), where n=amountToSell and e = exchangeRate of 1 token tokenA in terms of tokenB
+            uint256 p = ((RATIO_PRECISION * ((10 ** decimal) * precisionDiff) / 
+                            (quote(info.toSwapToken, info.token0Address, 10 ** decimal) * amountToSell)) * 
+                                ((invested[info.token0Address] * (info.endingToSwap - amountToSell) / invested[info.toSwapToken]) - info.ending0Token) 
+                                    / precisionDiff);
 
             swapTo0 = amountToSell * p / RATIO_PRECISION;
             //To assure we dont sell to much 
@@ -1075,27 +1069,41 @@ abstract contract Tripod {
         }
     }
 
+    /*
+    * @notice 
+    *   Internal function called when a new position has been opened to store the relative weights of each token invested
+    *   uses the most recent oracle price to get the dollar value of the amount invested. This is so the rebalance function
+    *   can work with different dollar amounts invested upon lp creation
+    * @param investedA, the amount of tokenA that was invested
+    * @param investedB, the amount of tokenB that was invested
+    * @param investedC, the amoun of tokenC that was invested
+    * @return, the relative weight for each token expressed as 1e18
+    */
     function getWeights(
         uint256 investedA,
         uint256 investedB,
         uint256 investedC
-    ) public view returns (uint256 wA, uint256 wB, uint256 wC) {
+    ) internal view returns (uint256 wA, uint256 wB, uint256 wC) {
         unchecked {
             uint256 adjustedA = getOraclePrice(tokenA, investedA);
             uint256 adjustedB = getOraclePrice(tokenB, investedB);
             uint256 adjustedC = getOraclePrice(tokenC, investedC);
             uint256 total = adjustedA + adjustedB + adjustedC; 
-            console.log("total is: ", total);
                         
             wA = adjustedA * RATIO_PRECISION / total;
             wB = adjustedB * RATIO_PRECISION / total;
             wC = adjustedC * RATIO_PRECISION / total;
         }
-        console.log("Weight of a: ", wA);
-        console.log("Weight of b: ", wB);
-        console.log("weight of c: ", wC);
     }
 
+    /*
+    * @notice
+    *   Returns the oracle adjusted price for a specific token and amount expressed in the oracle terms of 1e8
+    *   This uses the chainlink feed Registry and returns in terms of the USD
+    * @param _token, the address of the token to get the price for
+    * @param _amount, the amount of the token we have
+    * @return USD price of the _amount of the token as 1e8
+    */
     function getOraclePrice(address _token, uint256 _amount) public view returns(uint256) {
         (uint80 roundId, int256 price,, uint256 updateTime, uint80 answeredInRound) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
                 _token,
@@ -1397,32 +1405,22 @@ abstract contract Tripod {
      * @param expectedBalanceC, expected balance of tokenC to receive
      */
     function removeLiquidityManually(
-        uint256 amount,
         uint256 expectedBalanceA,
         uint256 expectedBalanceB,
         uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
         dontInvestWant = true;
-        withdrawLP(amount);
-        uint256 _a = balanceOfA();
-        uint256 _b = balanceOfB();
-        uint256 _c = balanceOfC();
+        withdrawLP(balanceOfStake());
+        //Burn lp will handle min Out checks
         burnLP(
-            amount,
+            balanceOfPool(),
             expectedBalanceA,
             expectedBalanceB,
             expectedBalanceC
         );
 
-        //Need to update the invested balances based on how much we pulled out
-        unchecked {
-            uint256 aDiff = balanceOfA() - _a;
-            uint256 bDiff = balanceOfB() - _b;
-            uint256 cDiff = balanceOfC() - _c;
-            invested[tokenA] = invested[tokenA] > aDiff ? invested[tokenA] - aDiff : 0;
-            invested[tokenB] = invested[tokenB] > bDiff ? invested[tokenB] - bDiff : 0;
-            invested[tokenC] = invested[tokenC] > cDiff ? invested[tokenC] - cDiff : 0;
-        }
+        // reset invested balances or we wont be able to open up a position again
+        invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
     }
 
     /*
