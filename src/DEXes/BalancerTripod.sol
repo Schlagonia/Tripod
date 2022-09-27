@@ -169,6 +169,9 @@ contract BalancerTripod is NoHedgeTripod {
         maxApprove(tokenB, address(balancerVault));
         maxApprove(tokenC, address(balancerVault));
         maxApprove(pool, address(depositContract));
+        maxApprove(tokenA, address(curvePool));
+        maxApprove(tokenB, address(curvePool));
+        maxApprove(tokenC, address(curvePool));
     }
 
     event Cloned(address indexed clone);
@@ -511,12 +514,12 @@ contract BalancerTripod is NoHedgeTripod {
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
      * @return swapped amount
      */
-    function swap(
+    function swaps(
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn,
         uint256 _minOutAmount
-    ) internal override returns (uint256) {
+    ) internal  returns (uint256) {
         if(_amountIn <= minAmountToSell) {
             return 0;
         }
@@ -578,6 +581,41 @@ contract BalancerTripod is NoHedgeTripod {
         uint256 diff = IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
         require(diff >= _minOutAmount, "!out");
         return diff;
+    }
+
+    /*
+     * @notice
+     *  Function used internally to swap core lp tokens during rebalancing.
+     * @param _tokenFrom, adress of token to swap from
+     * @param _tokenTo, address of token to swap to
+     * @param _amountIn, amount of _tokenIn to swap for _tokenTo
+     * @return swapped amount
+     */
+    function swap(
+        address _tokenFrom,
+        address _tokenTo,
+        uint256 _amountIn,
+        uint256 _minOutAmount
+    ) internal override returns (uint256) {
+        if(_amountIn <= minAmountToSell) {
+            return 0;
+        }
+
+        require(_tokenTo == tokenA || _tokenTo == tokenB || _tokenTo == tokenC, "must be valid _to"); 
+        require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid _from");
+        uint256 prevBalance = IERC20(_tokenTo).balanceOf(address(this));
+
+        //ICurveFi _pool = ICurveFi(pool);
+
+        // Perform swap
+        curvePool.exchange(
+            curveIndex[_tokenFrom], 
+            curveIndex[_tokenTo],
+            _amountIn, 
+            _minOutAmount
+        );
+
+        return IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
     }
 
     /*
