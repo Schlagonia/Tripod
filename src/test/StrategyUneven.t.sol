@@ -240,7 +240,7 @@ contract StrategyUnevenTest is StrategyFixture {
         assertRelApproxEq(bRatio, cRatio, DELTA);
         //assertTrue (false);
     }
-
+/*
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
@@ -367,5 +367,5 @@ contract StrategyUnevenTest is StrategyFixture {
             assertRelApproxEq(assetFixtures[2].strategy.balanceOfWant() + assetFixtures[2].want.balanceOf(address(assetFixtures[0].vault)), _c, DELTA);
         }
     }
-
+*/
 }
