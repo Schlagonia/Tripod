@@ -607,10 +607,10 @@ abstract contract Tripod {
 
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
-                swapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
+                swapTwoToOne(tokenA, tokenB, tokenC);
             } else if (ratioC > avgRatio) {
                 //swapping A and C -> B
-                swapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
+                swapTwoToOne(tokenA, tokenC, tokenB);
             } else {
                 //Swapping A -> B and C
                 swapOneToTwo(tokenA, tokenB, tokenC);
@@ -620,7 +620,7 @@ abstract contract Tripod {
             //We know A is below avg so we just need to check C
             if (ratioC > avgRatio) {
                 //Swap B and C -> A
-                swapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
+                swapTwoToOne(tokenB, tokenC, tokenA);
             } else {
                 //swapping B -> C and A
                 swapOneToTwo(tokenB, tokenA, tokenC);
@@ -641,9 +641,11 @@ abstract contract Tripod {
         uint256 b0;
         uint256 b1;
         uint256 eOfB;
+        uint256 precisionB;
         uint256 c0;
         uint256 c1;
         uint256 eOfC;
+        uint256 precisionC;
     }   
 
     /*
@@ -697,9 +699,11 @@ abstract contract Tripod {
                 invested[token0Address],
                 IERC20(token0Address).balanceOf(address(this)),
                 quote(toSwapToken, token0Address, precision),
+                0,
                 invested[token1Address],
                 IERC20(token1Address).balanceOf(address(this)),
-                quote(toSwapToken, token1Address, precision)
+                quote(toSwapToken, token1Address, precision),
+                0
             ));
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
@@ -737,31 +741,24 @@ abstract contract Tripod {
      * @param toTokenAddress, address of the token we are swapping to
     */
     function swapTwoToOne(
-        uint256 avgRatio,
         address token0Address,
-        uint256 token0Ratio,
         address token1Address,
-        uint256 token1Ratio,
         address toTokenAddress
     ) internal {
         console.log("Swapping two to one");
-        unchecked {
-            //Calculates the difference between current amount and desired amount in token terms
-            //toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
-            //toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
-        }
-        uint256 precision = 10 ** IERC20Extended(toTokenAddress).decimals();
 
         (uint256 toSwapFrom0, uint256 toSwapFrom1) = getNbAndNc(RebalanceInfo(
-            precision,
+            0,
             invested[toTokenAddress],
             IERC20(toTokenAddress).balanceOf(address(this)),
             invested[token0Address],
             IERC20(token0Address).balanceOf(address(this)),
             quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
+            10 ** IERC20Extended(token0Address).decimals(),
             invested[token1Address],
             IERC20(token1Address).balanceOf(address(this)),
-            quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals())
+            quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
+            10 ** IERC20Extended(token1Address).decimals()
         ));
         console.log("Swapping : ", toSwapFrom0, "to token 0, and ", toSwapFrom1);
 
@@ -814,32 +811,23 @@ abstract contract Tripod {
     }
 
     function getNbAndNc(RebalanceInfo memory info) internal view returns(uint256 nb, uint256 nc) {
+        //nc is the amount of c we will be selling to a in sellTwoToOne() in terms of token c
+        //nc = (a0*c1 + b0*eOfb*c1 - a1*c0 - b1*eOfb*c0) / (a0 + eOfc*c0 + b0*eOfb)
         console.log("A0 is ", info.a0, " and a1 is ", info.a1);
         console.log("b0 is ", info.b0, "and b1 is ", info.b1);
         console.log("c0 is ", info.c0, " and c1 is ", info.c1);
         console.log("eOfB is ", info.eOfB, "eOfC is ", info.eOfC);
-        nc = getNc(info);
-        console.log("NC is ", nc);
-        nb = getNb(info, nc);
-        console.log("NB is ", nb);
-    }
-    
-    function getNc(RebalanceInfo memory info) internal view returns(uint256 nc) {
-        //nc is the amount of c we will be selling to a in sellTwoToOne() in terms of token c
-        //nc = (a0*c1 + b0*eOfb*c1 - a1*c0 - b1*eOfb*c0) / (a0 + eOfc*c0 + b0*eOfb)
-        uint256 numerator = (info.a0 * info.c1) + (info.b0 * info.eOfB * info.c1) - (info.a1 * info.c0) - (info.b1 * info.eOfB * info.c0);
-        uint256 denominator = info.a0 + (info.eOfC * info.c0) + (info.b0 * info.eOfB);
-        console.log("NC numerator is ", numerator, "and a denom is ", denominator);
-        nc = numerator / denominator;
-    }
+        console.log("precision b is ", info.precisionB, "precision c is", info.precisionC);
 
-    function getNb(RebalanceInfo memory info, uint256 nc) internal view returns(uint256 nb) {
-        // _nb is the the amount of b we will be selling to a in sellTwoToOne() in terms of token b
-        // _nb = (a0*b1 - a1*b0 - eOfc*b0*nc) / (eOfb*b0 + a0)
-        uint256 numerator = (info.a0 * info.b1) - (info.a1 * info.b0) - (info.eOfC * info.b0 * nc / 1e18);
-        uint256 denominator = (info.eOfB * info.b0 / 1e18) + info.a0;
-        console.log("NB numerator is ", numerator, "and a denom is ", denominator);
-        nb = numerator / denominator;
+        uint256 numeratorB = (info.a0 * info.b1) + (info.c0 * info.eOfC * info.b1 / info.precisionC) - (info.a1 * info.b0) - (info.c1 * info.eOfC * info.b0 / info.precisionC);
+        console.log("NB numerator is ", numeratorB);
+        uint256 numeratorC = (info.a0 * info.c1) + (info.b0 * info.eOfB * info.c1 / info.precisionB) - (info.a1 * info.c0) - (info.b1 * info.eOfB * info.c0 / info.precisionB);
+        console.log("NC numerator is ", numeratorC);
+        uint256 denominator = info.a0 + (info.eOfC * info.c0 / info.precisionC) + (info.b0 * info.eOfB / info.precisionB);
+        console.log("NB numerator is ", numeratorB);
+        console.log("NC numerator is ", numeratorC, "and a denom is ", denominator);
+        nb = numeratorB / denominator;
+        nc = numeratorC / denominator;
     }
 
     /*
@@ -955,29 +943,32 @@ abstract contract Tripod {
         console.log("Ratio A ", ratioA);
         console.log("Ratio B ", ratioB);
         console.log("Ratio C ", ratioC);
-        
+
         uint256 change0;
         uint256 change1;
         uint256 change2;
+        RebalanceInfo memory info;
         //See Rebalance() for explanation
         if(ratioA > avgRatio) {
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
+                info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
+                    quoteSwapTwoToOne(info, tokenA, tokenB, tokenC);
                 return ((startingA - change0), 
                             (startingB - change1), 
                                 (startingC + change2));
             } else if (ratioC > avgRatio) {
                 //swapping A and C -> B
+                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
+                    quoteSwapTwoToOne(info, tokenA, tokenC, tokenB);
                 return ((startingA - change0), 
                             (startingB + change2), 
                                 (startingC - change1));
             } else {
                 //Swapping A -> B and C
-                RebalanceInfo memory info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, startingC, 0);
+                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(info, tokenA, tokenB, tokenC);
                 return ((startingA - change0), 
@@ -988,14 +979,15 @@ abstract contract Tripod {
             //We know A is below avg so we just need to check C
             if (ratioC > avgRatio) {
                 //Swap B and C -> A
+                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
+                    quoteSwapTwoToOne(info, tokenB, tokenC, tokenA);
                 return ((startingA + change2), 
                             (startingB - change0), 
                                 (startingC - change1));
             } else {
                 //swapping B -> A and C
-                RebalanceInfo memory info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, startingC, 0);
+                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(info, tokenB, tokenA, tokenC);
                 return ((startingA + change1), 
@@ -1005,7 +997,7 @@ abstract contract Tripod {
         } else {
             //We know A and B are below so C has to be the only one above the avg
             //swap C -> A and B
-            RebalanceInfo memory info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, startingB, 0);
+            info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
             (change0, change1, change2) = 
                 quoteSwapOneToTwo(info, tokenC, tokenA, tokenB);
             return ((startingA + change1), 
@@ -1023,10 +1015,12 @@ abstract contract Tripod {
      * @param info, struct of all needed info OF token addresses and amounts
      * @return negative change in toSwapToken, positive change for token0, positive change for token1
     */
-    function quoteSwapOneToTwo(RebalanceInfo memory info, address toSwapFrom, address toSwapTo0, address toSwapTo1) 
-        internal 
-        view 
-        returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
+    function quoteSwapOneToTwo(
+        RebalanceInfo memory info, 
+        address toSwapFrom, 
+        address toSwapTo0, 
+        address toSwapTo1
+    ) internal view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
         uint256 swapTo0;
         uint256 swapTo1;
 
@@ -1057,9 +1051,11 @@ abstract contract Tripod {
                 invested[toSwapTo0],
                 info.b1,
                 quote(toSwapFrom, toSwapTo0, precision),
+                0,
                 invested[toSwapTo1],
                 info.c1,
-                quote(toSwapFrom, toSwapTo1, precision)
+                quote(toSwapFrom, toSwapTo1, precision),
+                0
             );
 
             uint256 p;
@@ -1099,21 +1095,27 @@ abstract contract Tripod {
      * @return negative change for token0, negative change for token1, positive change for toTokenAddress
     */
     function quoteSwapTwoToOne(
-        uint256 avgRatio,
+        RebalanceInfo memory info,
         address token0Address,
-        uint256 token0Ratio,
         address token1Address,
-        uint256 token1Ratio,
         address toTokenAddress
     ) internal view returns(uint256, uint256, uint256) {
-        uint256 toSwapFrom0;
-        uint256 toSwapFrom1;
 
-        unchecked {
-            //Calculates the difference between current amount and desired amount in token terms
-            toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
-            toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
-        }
+        info = RebalanceInfo(
+            0,
+            invested[toTokenAddress],
+            info.a1,
+            invested[token0Address],
+            info.b1,
+            quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
+            10 ** IERC20Extended(token0Address).decimals(),
+            invested[token1Address],
+            info.c1,
+            quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
+            10 ** IERC20Extended(token1Address).decimals()
+        );
+
+        (uint256 toSwapFrom0, uint256 toSwapFrom1) = getNbAndNc(info);
 
         uint256 amountOut = quote(
             token0Address, 
