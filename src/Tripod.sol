@@ -585,18 +585,14 @@ abstract contract Tripod {
                     balanceOfC()
                 );
     
-        //If they are all the same we dont need to do anything
-        if( ratioA == ratioB && ratioB == ratioC) return;
+        //If they are all the same or very close we dont need to do anything
+        if(isCloseEnough(ratioA, ratioB) && isCloseEnough(ratioB, ratioC)) return;
 
         // Calculate the weighted average ratio. Could be at a loss does not matter here
         uint256 avgRatio;
         unchecked{
             avgRatio = (ratioA * investedWeight[tokenA] + ratioB * investedWeight[tokenB] + ratioC * investedWeight[tokenC]) / RATIO_PRECISION;
         }
-        console.log("Avg starting ratio is ", avgRatio);
-        console.log("Ratio A ", ratioA);
-        console.log("Ratio B ", ratioB);
-        console.log("Ratio C ", ratioC);
 
         //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
         //If two are higher than the average each has its diff traded to the third
@@ -671,26 +667,7 @@ abstract contract Tripod {
         uint256 swapTo1;
         
         unchecked {
-            //uint256 a0 = invested[toSwapToken];
-            //uint256 a1 = IERC20(toSwapToken).balanceOf(address(this));
-            //uint256 b0 = invested[token0Address];
-            //uint256 b1 = IERC20(token0Address).balanceOf(address(this));
-
-            //Calculates the difference between current amount and desired amount in token terms
-            //amountToSell = (toSwapRatio - avgRatio) * a0 / RATIO_PRECISION;
-
             uint256 precision = 10 ** IERC20Extended(toSwapToken).decimals();
-            //uint256 toDecimals = IERC20Extended(token0Address).decimals();
-            
-            //e = exchangeRate of token 1 tokenA in terms of tokenB
-            //uint256 e = quote(toSwapToken, token0Address, 10 ** decimal);
-            //This is used to make sure we dont underflow on division if the token decimals differ
-            //uint256 precisionDiff = toDecimals > decimal ? 10 ** (toDecimals - decimal) : 1;
-
-            //P is the propotion of the amountToSell that gets swapped to tokenB repersented as 1e18
-            //p = (1/en)*((b0(a1-n)/a0)-b1), where n=amountToSell
-            //uint256 p = (RATIO_PRECISION * ((10 ** decimal) * precisionDiff) / (e * amountToSell)) * 
-            //                ((b0 * (a1 - amountToSell) / a0) - b1) / precisionDiff;
 
             (uint256 n, uint256 p) = getNandP(RebalanceInfo(
                 precision,
@@ -705,13 +682,12 @@ abstract contract Tripod {
                 quote(toSwapToken, token1Address, precision),
                 0
             ));
+            //swapTo0 = the amount to sell * The percent going to 0
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
             swapTo1 = n - swapTo0;
         }
         
-        console.log("Swapping : ", swapTo0, "to token 0, and ", swapTo1);
-
         swap(
             toSwapToken, 
             token0Address, 
@@ -745,7 +721,6 @@ abstract contract Tripod {
         address token1Address,
         address toTokenAddress
     ) internal {
-        console.log("Swapping two to one");
 
         (uint256 toSwapFrom0, uint256 toSwapFrom1) = getNbAndNc(RebalanceInfo(
             0,
@@ -760,7 +735,6 @@ abstract contract Tripod {
             quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
             10 ** IERC20Extended(token1Address).decimals()
         ));
-        console.log("Swapping : ", toSwapFrom0, "to token 0, and ", toSwapFrom1);
 
         swap(
             token0Address, 
@@ -777,57 +751,64 @@ abstract contract Tripod {
         );
     }
 
-    function getNandP(RebalanceInfo memory info) internal view returns(uint256 n, uint256 p) {
+    function isCloseEnough(uint256 ratio0, uint256 ratio1) public view returns(bool) {
+        if(ratio0 == 0 && ratio1 ==0) return true;
+
+        uint256 delta = ratio0 > ratio1 ? ratio0 - ratio1 : ratio1 - ratio0;
+        //We use one lower decimal than our maxPercent loss. So if maxPercentLoss == .1 we wont rebalance withen .01
+        uint256 maxRelDelta = ratio1 / (RATIO_PRECISION / (maxPercentageLoss / 10));
+
+        if (delta < maxRelDelta) return true;
+    }
+
+    function getNandP(RebalanceInfo memory info) internal pure returns(uint256 n, uint256 p) {
         p = getP(info);
         n = getN(info, p);
-        console.log("N is ", n , "and P is ", p);
     }
 
-    function getN(RebalanceInfo memory info, uint256 p) internal view returns(uint256) {
-        console.log("A0 is ", info.a0, " and a1 is ", info.a1);
-        console.log("b0 is ", info.b0, "and b1 is ", info.b1);
-        console.log("eOfB is ", info.eOfB);
+    function getN(RebalanceInfo memory info, uint256 p) internal pure returns(uint256) {
         //n = -((a0*b1) - (a1*b0)) / (b0 + eOfB*a0*P)
-        int256 numerator = (int256(info.a0) * int256(info.b1)) - (int256(info.a1) * int256(info.b0));
-        int256 denominator = ((int256(info.b0) * 1e18) + ((int256(info.eOfB) * int256(info.a0) / int256(info.precision)) * int256(p)));
+        unchecked{
+            int256 numerator = (int256(info.a0) * int256(info.b1)) - (int256(info.a1) * int256(info.b0));
 
-        int256 n = -1 * (numerator * 1e18 / denominator);
-        return(uint256(n));
+            int256 denominator = ((int256(info.b0) * 1e18) + ((int256(info.eOfB) * int256(info.a0) / int256(info.precision)) * int256(p)));
+
+            int256 n = -1 * (numerator * 1e18 / denominator);
+
+            return(uint256(n));
+        }
     }
 
-    function getP(RebalanceInfo memory info) internal view returns (uint256 p) {
+    function getP(RebalanceInfo memory info) internal pure returns (uint256 p) {
         //pOfB = (a1*b0*eOfC + b0c1 - b1c0 - a0*b1*eOfC)  /  (a1*c0*eOfB + a1*b0*eOfC - a0*c1*eOfB - a0*b1*eOfC)
-        //pre-calculate a couple of parts that are used twice
-        //one = a0*b1*eOfC
-        uint256 one = info.a0 * info.b1 * info.eOfC;
-        //two = a1*b0*eOfC
-        uint256 two = info.a1 * info.b0 * info.eOfC;
+        unchecked {
+            //pre-calculate a couple of parts that are used twice
+            //one = a0*b1*eOfC
+            uint256 one = info.a0 * info.b1 * info.eOfC / info.precision;
+            //two = a1*b0*eOfC
+            uint256 two = info.a1 * info.b0 * info.eOfC / info.precision;
 
-        uint256 numerator = two + (info.b0 * info.c1) - (info.b1 * info.c0) - one;
+            uint256 numerator = two + (info.b0 * info.c1) - (info.b1 * info.c0) - one;
 
-        uint256 denominator = (info.a1 * info.c0 * info.eOfB) + two - (info.a0 * info.c1 * info.eOfB) - one;
-        console.log("P num is ", numerator, "and den is ", denominator);
-        p = numerator * 1e18 / denominator;
+            uint256 denominator = (info.a1 * info.c0 * info.eOfB / info.precision) + two - (info.a0 * info.c1 * info.eOfB / info.precision) - one;
+    
+            p = numerator * 1e18 / denominator;
+        }
     }
 
-    function getNbAndNc(RebalanceInfo memory info) internal view returns(uint256 nb, uint256 nc) {
+    function getNbAndNc(RebalanceInfo memory info) internal pure returns(uint256 nb, uint256 nc) {
         //nc is the amount of c we will be selling to a in sellTwoToOne() in terms of token c
         //nc = (a0*c1 + b0*eOfb*c1 - a1*c0 - b1*eOfb*c0) / (a0 + eOfc*c0 + b0*eOfb)
-        console.log("A0 is ", info.a0, " and a1 is ", info.a1);
-        console.log("b0 is ", info.b0, "and b1 is ", info.b1);
-        console.log("c0 is ", info.c0, " and c1 is ", info.c1);
-        console.log("eOfB is ", info.eOfB, "eOfC is ", info.eOfC);
-        console.log("precision b is ", info.precisionB, "precision c is", info.precisionC);
+        unchecked {
+            uint256 numeratorB = (info.a0 * info.b1) + (info.c0 * info.eOfC * info.b1 / info.precisionC) - (info.a1 * info.b0) - (info.c1 * info.eOfC * info.b0 / info.precisionC);
 
-        uint256 numeratorB = (info.a0 * info.b1) + (info.c0 * info.eOfC * info.b1 / info.precisionC) - (info.a1 * info.b0) - (info.c1 * info.eOfC * info.b0 / info.precisionC);
-        console.log("NB numerator is ", numeratorB);
-        uint256 numeratorC = (info.a0 * info.c1) + (info.b0 * info.eOfB * info.c1 / info.precisionB) - (info.a1 * info.c0) - (info.b1 * info.eOfB * info.c0 / info.precisionB);
-        console.log("NC numerator is ", numeratorC);
-        uint256 denominator = info.a0 + (info.eOfC * info.c0 / info.precisionC) + (info.b0 * info.eOfB / info.precisionB);
-        console.log("NB numerator is ", numeratorB);
-        console.log("NC numerator is ", numeratorC, "and a denom is ", denominator);
-        nb = numeratorB / denominator;
-        nc = numeratorC / denominator;
+            uint256 numeratorC = (info.a0 * info.c1) + (info.b0 * info.eOfB * info.c1 / info.precisionB) - (info.a1 * info.c0) - (info.b1 * info.eOfB * info.c0 / info.precisionB);
+
+            uint256 denominator = info.a0 + (info.eOfC * info.c0 / info.precisionC) + (info.b0 * info.eOfB / info.precisionB);
+
+            nb = numeratorB / denominator;
+            nc = numeratorC / denominator;
+        }
     }
 
     /*
@@ -890,26 +871,6 @@ abstract contract Tripod {
     }
 
     /*
-    * @notice
-    *   We use this struct in the qoute rebalance function for quoteSwapOneToTwo() in order to avoid stack to deep errors
-    * @param avgRatio, the weighted average return we want all tokens to end at
-    * @param toSwapToken, the token we are swapping from
-    * @param toSwapRatio, the current ratio for the token we are swapping from
-    * @param endingToSwap,  the amount of toSwapToken we expect to have before rebalancing, ie a1
-    * @param token0Address, the address of one of the tokens we are swapping to
-    * @param ending0Token, the amount of token0Address we expect to have before rebalancing, i.e b1
-    * @param token1Address, the address of the other token we are swapping to
-    */
-    struct QuoteInfo {
-        uint256 avgRatio;
-        address toSwapToken;
-        uint256 toSwapRatio;
-        uint256 endingToSwap;
-        address token0Address;
-        uint256 ending0Token;
-        address token1Address;
-    }
-    /*
     * @notice 
     *    This function is a fucking disaster.
     *    But it works...
@@ -930,8 +891,8 @@ abstract contract Tripod {
                     startingC
                 );
         
-        //If they are all the same we dont need to do anything
-        if(ratioA == ratioB && ratioB == ratioC) {
+        //If they are all the same or very close we dont need to do anything
+        if(isCloseEnough(ratioA, ratioB) && isCloseEnough(ratioB, ratioC)) {
             return(startingA, startingB, startingC);
         }
         // Calculate the average ratio. Could be at a loss does not matter here
@@ -939,10 +900,6 @@ abstract contract Tripod {
         unchecked{
             avgRatio = (ratioA * investedWeight[tokenA] + ratioB * investedWeight[tokenB] + ratioC * investedWeight[tokenC]) / RATIO_PRECISION;
         }
-        console.log("Avg starting ratio for the quote is ", avgRatio);
-        console.log("Ratio A ", ratioA);
-        console.log("Ratio B ", ratioB);
-        console.log("Ratio C ", ratioC);
 
         uint256 change0;
         uint256 change1;
@@ -1025,23 +982,6 @@ abstract contract Tripod {
         uint256 swapTo1;
 
         unchecked {
-            /*
-            //Calculates the difference between current amount and desired amount in token terms
-            amountToSell = (info.toSwapRatio - info.avgRatio) * invested[info.toSwapToken] / RATIO_PRECISION;
-
-            uint256 decimal = IERC20Extended(info.toSwapToken).decimals();
-            uint256 toDecimals = IERC20Extended(info.token0Address).decimals();
-            
-            //This is used to make sure we dont underflow on division if the token decimals differ
-            uint256 precisionDiff = toDecimals > decimal ? 10 ** (toDecimals - decimal) : 1;
-
-            //P is the propotion of the amountToSell that gets swapped to tokenB repersented as 1e18
-            //p = (1/en)*((b0(a1-n)/a0)-b1), where n=amountToSell and e = exchangeRate of 1 token tokenA in terms of tokenB
-            uint256 p = ((RATIO_PRECISION * ((10 ** decimal) * precisionDiff) / 
-                            (quote(info.toSwapToken, info.token0Address, 10 ** decimal) * amountToSell)) * 
-                                ((invested[info.token0Address] * (info.endingToSwap - amountToSell) / invested[info.toSwapToken]) - info.ending0Token) 
-                                    / precisionDiff);
-            */
             uint256 precision = 10 ** IERC20Extended(toSwapFrom).decimals();
             
             info = RebalanceInfo(
@@ -1066,7 +1006,7 @@ abstract contract Tripod {
             //To assure we dont sell to much 
             swapTo1 = n - swapTo0;
         }
-        console.log("Qouting swapping : ", swapTo0, "to token 0, and ", swapTo1);
+
         amountOut = quote(
             toSwapFrom, 
             toSwapTo0, 
@@ -1213,9 +1153,6 @@ abstract contract Tripod {
             wB = adjustedB * RATIO_PRECISION / total;
             wC = adjustedC * RATIO_PRECISION / total;
         }
-        //console.log("Weight of A = ", wA);
-        //console.log("Weight of B = ", wB);
-        //console.log("Weight of C = ", wC);
     }
 
     /*
@@ -1227,10 +1164,16 @@ abstract contract Tripod {
     * @return USD price of the _amount of the token as 1e8
     */
     function getOraclePrice(address _token, uint256 _amount) public view returns(uint256) {
+        address token = _token;
+        //Adjust if we are using WETH of WBTC for chainlink to work
+        if(_token == referenceToken) token = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+        if(_token == 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599) token = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB;
+
         (uint80 roundId, int256 price,, uint256 updateTime, uint80 answeredInRound) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
                 _token,
                 address(0x0000000000000000000000000000000000000348) // USD
             );
+
         require(price > 0, "Chainlink price <= 0");
         require(updateTime != 0, "Incomplete round");
         require(answeredInRound >= roundId, "Stale price");

@@ -207,7 +207,44 @@ contract StrategyUnevenTest is StrategyFixture {
         }
     }
 
-    function testProfitableRebalance(uint256 _amount) public {
+    function testProfitableRebalanceOneToTwo(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        //_amount = 549795218509492887568708;
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
+        console.log("Deposited 0 ", deposited[0]);
+        console.log("deposited 1 ", deposited[1]);
+        console.log("Deposited 2 ", deposited[2]);
+        
+        skip(1 days);   
+        deal(cvx, address(tripod), _amount/100);
+        deal(crv, address(tripod), _amount/100);
+
+        //Turn off health check to allow for profit
+        setProvidersHealthCheck(false);
+
+        vm.prank(keeper);
+        tripod.harvest();
+        
+        uint256 aProfit = assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault));
+        uint256 bProfit = assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault));
+        uint256 cProfit = assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault));
+
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+            aProfit + deposited[0],
+            bProfit + deposited[1],
+            cProfit + deposited[2]
+        );
+        console.log("A ratio ", aRatio, " profit was ", aProfit);
+        console.log("B ratio ", bRatio, " profit was ", bProfit);
+        console.log("C ratio ", cRatio, " profit was ", cProfit);
+
+        assertGt(aRatio, 1e18);        
+        assertRelApproxEq(aRatio, bRatio, DELTA);
+        assertRelApproxEq(bRatio, cRatio, DELTA);
+        //assertTrue(false);
+    }
+
+function testProfitableRebalanceTowToOne(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         //_amount = 4284287855830879748964;
         uint256[3] memory deposited = depositAllVaultsAndHarvestUneven(_amount);
@@ -223,8 +260,7 @@ contract StrategyUnevenTest is StrategyFixture {
         setProvidersHealthCheck(false);
         uint256 j = _amount % 3;
         uint256 k = (_amount + 1) % 3;
-        //j=2;
-        //k=0;
+
         console.log(" j is ", j, "k is ", k);
         //Tip two of the tokens to the tripod to make sure we are using swapTwoToOne
         deal(address(assetFixtures[j].want), address(tripod), deposited[j] / 10);
@@ -250,7 +286,6 @@ contract StrategyUnevenTest is StrategyFixture {
         assertRelApproxEq(bRatio, cRatio, DELTA);
         //assertTrue(false);
     }
-
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
