@@ -50,17 +50,17 @@ contract ManualOpsTest is StrategyFixture {
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
         tripod.removeLiquidityManually(
-            lpBalance/ 2,
             (_a /2) * 9_900 / 10_000,
             (_b / 2) * 9_900 / 10_000,
             (_c / 2) * 9_900 / 10_000
         );
 
         assertEq(tripod.balanceOfPool(), 0, "balance of pool off");
-        assertRelApproxEq(tripod.balanceOfStake(), lpBalance / 2, DELTA);
+        assertEq(tripod.balanceOfStake(), 0);
         assertGt(tripod.balanceOfA(), 0, "A balance");
         assertGt(tripod.balanceOfC(), 0, "c balance");
         assertGt(tripod.balanceOfB(), 0, "b balance");
+        assertEq(tripod.invested(tripod.tokenA()), 0, "invested not resset");
     }
 
     function testManualLiquidateFail(uint256 _amount) public {
@@ -76,10 +76,9 @@ contract ManualOpsTest is StrategyFixture {
         vm.prank(gov);
         vm.expectRevert(bytes("!sandwiched"));
         tripod.removeLiquidityManually(
-            lpBalance/ 2,
-            (_a /2) * 11_000 / 10_000,
-            (_b / 2) * 11_000 / 10_000,
-            (_c / 2) * 11_000 / 10_000
+            _a * 11_000 / 10_000,
+            _b * 11_000 / 10_000,
+            _c * 11_000 / 10_000
         );
     }
 

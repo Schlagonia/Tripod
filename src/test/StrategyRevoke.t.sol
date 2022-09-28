@@ -10,7 +10,7 @@ contract StrategyRevokeTest is StrategyFixture {
 
     function testRevokeStrategyFromVault(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
         //Pick a random Strategy to shutdown
         uint256 i = _amount % 3;
@@ -23,7 +23,7 @@ contract StrategyRevokeTest is StrategyFixture {
         uint256 preBalance = assetFixtures[i].strategy.estimatedTotalAssets();
         vm.prank(keeper);
         tripod.harvest();
-        assertGe(assetFixtures[i].want.balanceOf(address(assetFixtures[i].vault)), preBalance);
+        assertGe(assetFixtures[i].want.balanceOf(address(assetFixtures[i].vault)), deposited[i]);
     }
 
 }

@@ -15,17 +15,6 @@ import {ITradeFactory} from "../interfaces/ySwaps/ITradeFactory.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
-interface IFeedRegistry {
-    function getFeed(address, address) external view returns (address);
-    function latestRoundData(address, address) external view returns (
-        uint80 roundId,
-        int256 answer,
-        uint256 startedAt,
-        uint256 updatedAt,
-        uint80 answeredInRound
-    );
-}
-
 contract BalancerTripod is NoHedgeTripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -180,6 +169,9 @@ contract BalancerTripod is NoHedgeTripod {
         maxApprove(tokenB, address(balancerVault));
         maxApprove(tokenC, address(balancerVault));
         maxApprove(pool, address(depositContract));
+        maxApprove(tokenA, address(curvePool));
+        maxApprove(tokenB, address(curvePool));
+        maxApprove(tokenC, address(curvePool));
     }
 
     event Cloned(address indexed clone);
@@ -440,20 +432,21 @@ contract BalancerTripod is NoHedgeTripod {
         IAsset[] memory assets = new IAsset[](7);
         int[] memory limits = new int[](7);
         //Burn a third for each token
-        uint256 toBurn = _amount * 3_333 / 10_000;
+        uint256 burnt;
 
         //Need seperate swaps for each provider token
         //Each swap goes mainPool -> bb-token -> token
         PoolInfo memory _poolInfo;
         for (uint256 i; i < 3; i ++) {
             _poolInfo = poolInfo[i];
+            uint256 weightedToBurn = _amount * investedWeight[_poolInfo.token] / RATIO_PRECISION;
             uint256 j = i * 2;
             //Swap from main pool -> bb-token
             swaps[j] = IBalancerVault.BatchSwapStep(
                 poolId,
                 6,  //Index used for main pool
                 j,  //Index for bb-token pool
-                j == 0 ? _amount - (toBurn * 2) : toBurn, //To make sure we burn all of the LP
+                i == 2 ? _amount - burnt : weightedToBurn, //To make sure we burn all of the LP
                 abi.encode(0)
             );
 
@@ -466,6 +459,8 @@ contract BalancerTripod is NoHedgeTripod {
                 abi.encode(0)
             );
 
+            //adjust the already burnt LP amount
+            burnt += weightedToBurn;
             //Match the index used with the applicable address
             assets[j] = IAsset(_poolInfo.bbPool);
             assets[j+1] = IAsset(_poolInfo.token);
@@ -512,8 +507,7 @@ contract BalancerTripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Function used internally to swap core tokens during rebalancing. 
-     *  Perfroms a batch swap that goes tokenFrom -> bb-tokenFrom -> bb-tokento -> tokenTo
+     *  Function used internally to swap core lp tokens during rebalancing.
      * @param _tokenFrom, adress of token to swap from
      * @param _tokenTo, address of token to swap to
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
@@ -533,54 +527,14 @@ contract BalancerTripod is NoHedgeTripod {
         require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid _from");
         uint256 prevBalance = IERC20(_tokenTo).balanceOf(address(this));
 
-        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](3);
-        PoolInfo memory _fromPoolInfo = poolInfoMapping[_tokenFrom];
-        PoolInfo memory _toPoolInfo = poolInfoMapping[_tokenTo];
-        //Sell tokenFrom -> bb-tokenFrom
-        swaps[0] = IBalancerVault.BatchSwapStep(
-            _fromPoolInfo.poolId,
-            0,  //Index to use for tokenFrom
-            1,  //Index to use for bb-tokenFrom
-            _amountIn,
-            abi.encode(0)
-        );
-        
-        //bb-tokenFrom -> bb-tokenTo
-        swaps[1] = IBalancerVault.BatchSwapStep(
-            poolId,
-            1,  //Index to use for bb-tokenFrom
-            2,  //Index to use for bb-tokenTo
-            0,
-            abi.encode(0)
-        );
+        //ICurveFi _pool = ICurveFi(pool);
 
-        //bb-tokenTo -> tokenTo
-        swaps[2] = IBalancerVault.BatchSwapStep(
-            _toPoolInfo.poolId ,
-            2,  //Index to use for bb-tokenTo
-            3,  //Index to use for tokenTo
-            0,
-            abi.encode(0)
-        );
-
-        //Match the token address with the index used above for this trade
-        IAsset[] memory assets = new IAsset[](4);
-        assets[0] = IAsset(_tokenFrom);
-        assets[1] = IAsset(_fromPoolInfo.bbPool);
-        assets[2] = IAsset(_toPoolInfo.bbPool);
-        assets[3] = IAsset(_tokenTo);
-        
-        //Only min we need to set is for the balance going in
-        int[] memory limits = new int[](4);
-        limits[0] = int(_amountIn);
-            
-        balancerVault.batchSwap(
-            IBalancerVault.SwapKind.GIVEN_IN, 
-            swaps, 
-            assets, 
-            getFundManagement(), 
-            limits, 
-            block.timestamp
+        // Perform swap
+        curvePool.exchange(
+            curveIndex[_tokenFrom], 
+            curveIndex[_tokenTo],
+            _amountIn, 
+            _minOutAmount
         );
 
         uint256 diff = IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;

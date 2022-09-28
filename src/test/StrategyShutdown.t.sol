@@ -36,7 +36,7 @@ contract StrategyShutdownTest is StrategyFixture {
         }
 
         skip(7 hours);
-        uint256 preBalance = _want.balanceOf(user);
+        //uint256 preBalance = _provider.estimatedTotalAssets();
         // Set Emergency
         vm.prank(gov);
         _vault.setEmergencyShutdown(true);
@@ -53,12 +53,12 @@ contract StrategyShutdownTest is StrategyFixture {
         vm.prank(user);
         _vault.withdraw();
         console.log("Withdrew ", _want.balanceOf(user));
-        assertGe(_want.balanceOf(user), preBalance + deposited[index]);
+        assertGe(_want.balanceOf(user), deposited[index]);
     }
 
     function testBasicShutdown(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
         // Earn interest
         skip(2 days);
@@ -76,13 +76,13 @@ contract StrategyShutdownTest is StrategyFixture {
         vm.prank(strategist);
         _provider.setEmergencyExit();
 
-        uint256 preBalance = _provider.estimatedTotalAssets();
+        //uint256 preBalance = _provider.estimatedTotalAssets();
 
         vm.prank(strategist);
         _provider.harvest(); // Remove funds from strategy
 
         assertEq(_want.balanceOf(address(_provider)), 0);
-        assertGe(_want.balanceOf(address(_vault)), preBalance); // The vault has all funds
+        assertGe(_want.balanceOf(address(_vault)), deposited[index]); // The vault has all funds
     }
 
     function testDontInvestWant(uint256 _amount) public {
