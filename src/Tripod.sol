@@ -2,13 +2,88 @@
 pragma solidity ^0.8.12;
 pragma experimental ABIEncoderV2;
 
+/*    :::::::::::       :::::::::       :::::::::::       :::::::::       ::::::::       ::::::::: 
+         :+:           :+:    :+:          :+:           :+:    :+:     :+:    :+:      :+:    :+: 
+        +:+           +:+    +:+          +:+           +:+    +:+     +:+    +:+      +:+    +:+  
+       +#+           +#++:++#:           +#+           +#++:++#+      +#+    +:+      +#+    +:+   
+      +#+           +#+    +#+          +#+           +#+            +#+    +#+      +#+    +#+    
+     #+#           #+#    #+#          #+#           #+#            #+#    #+#      #+#    #+#     
+    ###           ###    ###      ###########       ###             ########       #########       
+.........................................,;**?????*+:...............................................
+.......................................:+??*********?*:.............................................
+.....................................,+??************??*,...........................................
+..................................,:+???**************???+;,........................................
+...........................,,:::;+*???%?**************??%???*+;::::,,,..............................
+....................,:;+**??%%%%%????*%%?*************?%?*????%%%%%%???*++;:........................
+...................,*?%%%%%%%%%%?*????*%%?***********?%%*????*?%%%%%%%%%%S%?,.......................
+...................,%%%%%%%%%%%%*??????*?%??********?%?*??????*%%%%%%%%%%%%%,.......................
+....................?%%%%%%%%%%?*???????*?????????????*???????*?%%%%%%%%%%%?,.......................
+....................+%%%%%%%%??*?????????*?????????????*???????*??%%%%%%%%%*........................
+....................;S%%%%???**????????*?????+;;;;;*??%?*???????**???%%%%%%:........................
+....................+?**??%%*******????%%?S%*:.....:*S%?S%??????????%%??**?;........................
+...................;?????%%********????%%?%%??*....*?%%%*%%??????*??*??%%%???,.......................
+..................:%S%%S%??*****????*?%SS?*%%%%%%%%%%??%%SS????????*???%S%%S?,......................
+.................:%%S%?*%%***?%SS??**%%SS%%%??%%%%?%??%%SS%%***?%%%??%%%%%%??*......................
+................,??S%%*;%%?%?**?%S%?*?%%%SSS%??%%??%%%%S%%%%???SS%*++?S%%%%+*?;.....................
+................+?%%S%+*%S%%;,,*%%S%??%%%%%%SSSSSSSSS%%%%%%???SS%%+::*%%S%S*;*?:....................
+...............:?%S%%+?%%S%%?*?%%SS%%*?%%%%%%%%%%%%%%%%%%%?**?%S%%%??%%S%%S?+;?*,...................
+...............:;,....,?%%%%%%%%%%%%???????%%%%%%%S%%%?????????%%%%%%%%%%%%,..,::...................
+.......................+S%%%%%%%%%::?????????%%%%%%%%?????*????+;S%%%%%%SS?.........................
+.......................*%%%S%%SS#*..:??????*??????????**??????:..*##%?S%%%%;........................
+......................,+?%%?;,,:;,...:*??????????????????????:...,;:,.;*??+,........................
+.............................:*???:,::;+*%????????????????%*++;;????*,..............................
+.............................*????%SSS##SS????????????????S####S?????,..............................
+...........................,;*???*?SSSSS%S%??????????????%#SSSSS*???%*+;,...........................
+..........................;???%???*%S%%%?SSS%%?????????%SSS?%%S%*???????*,..........................
+..........................,;*??%?%??%%%**%SS??%??????S%?SS%?*%S??%??*??+,...........................
+............................,+???%%*%S%?*?S%?*%SS%%SSS?*?S%??%S?%????*:.............................
+..............................:*?*%?*%S?*?S%??%%?%%?%S??%S???S%?%*??+,..............................
+...............................,+??%??S%**%S???S%%%%%S??%S??%S?%???:................................
+..............................+%?%??%*%S?*%S%??SS##SSS??%S%?%%?%?%%?%*,.............................
+............................:%@#S%%%%??%S??SSS?%####SS*SS%%????%%%%S#@S:............................
+...........................:%#SSSSSSS%*%%%??;+?%#####%?++%%%%?%SSSSSSS#%;...........................
+..........................:??SSSSSS?::??+;?*..???SSS%*?,.?%;;?;:?SSSSSS??:..........................
+.........................:????%SSS*...;??:??,.+?%%%%%?*.:%?,+?,..*SSS%????;.........................
+........................:??**?????:....;?++?:.:?%????%;.+%;;%;...,*????????;........................
+.......................,????????*,......,::?+.,?%????%:.??,+;.....,*????????:.......................
+......................,????????*,..........+%;.*%???%?.+%+.........,+????????,......................
+...................;%#%****?+..................*?***?:..................;?****%#%+..................
+..................:%?%S%%??*,..................*???*?:....................*??%%S%?%;................
+.................,?%????S?:,...................??????,....................,:*S%???%?,...............
+................,????%?%;......................*%%%%?,......................:%?%???%:...............
+...............*????*..........................*??*?+...........................*????*,.............
+..............;????,...........................;????,............................,*???+.............
+.............*%?,...............................;%%?,.............................,*%*..............
+............;%%%+..............................,?%%%;.............................+%%%;.............
+...........,?%%%%,.............................:%%%%?............................,%%%%?,............
+...........:%%%%%+.............................+%%%%%:...........................+%%%%%;............
+...........*%%%%%?.............................?%%%%%;...........................?%%%%%*............
+...........?%%%%%%,...........................,?%%%%%+..........................,?%%%%%?,...........
+..........,%%%%%%%:...........................,%%%%%%*..........................:%%%%%%%:...........
+..........:%%%%%%%;...........................,%%%%%%?..........................;%%%%%%%:...........
+..........:%%%%%%%+............................%%%%%%?..........................;%%%%%%%;...........
+..........;%%%%%%%+............................+S%%%S*..........................+%%%%%%%;...........
+..........:S%%%%%%*............................+S%%%S*..........................+%%%%%%S;...........
+...........?S%%%%S;............................;S%%%%+..........................:%S%%%S?............
+..........*S*;%%:?S+..........................+S+;S*;S*........................,%%;%%+*S+...........
+..........?S;:S?.*S*..........................+S+;S*;S*........................;S?,?S;+S*...........
+.........,%%::%?.+S?..........................*S;;S*:S?........................+S*.?%;:S?...........
+.........:%%,:%?.;S%,.........................?S:;S*,%%,.......................*S+.?S;,%%,..........
+.........:%%,,%?.:%%,........................,%%,:S*.%%........................*S+.?S:,%%,..........
+.........;%?,+%%;:%%,........................,%%,:S*.%%,.......................?S;,?%+,%%:..........
+.........;S?*S%%S+%%,........................,%%,:S?,?%:.......................?%+?%%%;?%:..........
+........;%%;;;;::%%,.........................,%%;%SS??%:.......................?S;,,,,,%%:..........
+........;%%,....:%%:.........................,%%;....+%%,......................?S+....:%%;..........
+.......;?%%%;..:%%%%;........................:%SSS;.:%SSS+...................,?%S%*,.:%%%%*.........
+.......?%%%%*..?%%%%*........................:;;;;,.,;;;;:....................;????*,.+???*+......*/
+
+import "./interfaces/IERC20Extended.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
 
-import "./interfaces/IERC20Extended.sol";
-import "forge-std/console.sol";
+import {TripodMath} from "./TripodMath.sol";
 import {IVault} from "./interfaces/Vault.sol";
 
 interface ProviderStrategy {
@@ -38,9 +113,18 @@ interface IBaseFee {
     function isCurrentBaseFeeAcceptable() external view returns (bool);
 }
 
-abstract contract Tripod {
+/// @title Tripod
+/// @notice This is the base contract for a 3 token joint LP strategy to be used with @Yearn vaults
+///     The contract takes tokens from 3 seperate Provider strategies each with a different token that corresponds to one of the tokens that
+///     makes up the LP of "pool". Each harvest the Tripod will attempt to rebalance each token into an equal relative return percentage wise
+///     irrespecative of the begining weights, exchange rates or decimal differences. 
+///
+///     Made by Schlagania https://github.com/Schlagonia/Tripod adapted from the 2 token joint strategy https://github.com/fp-crypto/joint-strategy
+///
+abstract contract Tripod is TripodMath {
     using SafeERC20 for IERC20;
     using Address for address;
+
     // Constant to use in ratio calculations
     uint256 internal constant RATIO_PRECISION = 1e18;
     // Provider strategy of tokenA
@@ -585,18 +669,14 @@ abstract contract Tripod {
                     balanceOfC()
                 );
     
-        //If they are all the same we dont need to do anything
-        if( ratioA == ratioB && ratioB == ratioC) return;
+        //If they are all the same or very close we dont need to do anything
+        if(isCloseEnough(ratioA, ratioB) && isCloseEnough(ratioB, ratioC)) return;
 
         // Calculate the weighted average ratio. Could be at a loss does not matter here
         uint256 avgRatio;
         unchecked{
             avgRatio = (ratioA * investedWeight[tokenA] + ratioB * investedWeight[tokenB] + ratioC * investedWeight[tokenC]) / RATIO_PRECISION;
         }
-        console.log("Avg ratio is ", avgRatio);
-        console.log("Ratio A ", ratioA);
-        console.log("Ratio B ", ratioB);
-        console.log("Ratio C ", ratioC);
 
         //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
         //If two are higher than the average each has its diff traded to the third
@@ -607,30 +687,29 @@ abstract contract Tripod {
 
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
-                swapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
+                swapTwoToOne(tokenA, tokenB, tokenC);
             } else if (ratioC > avgRatio) {
                 //swapping A and C -> B
-                swapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
+                swapTwoToOne(tokenA, tokenC, tokenB);
             } else {
                 //Swapping A -> B and C
-                swapOneToTwo(avgRatio, tokenA, ratioA, tokenB, tokenC);
+                swapOneToTwo(tokenA, tokenB, tokenC);
             }
             
         } else if (ratioB > avgRatio) {
             //We know A is below avg so we just need to check C
             if (ratioC > avgRatio) {
                 //Swap B and C -> A
-                swapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
+                swapTwoToOne(tokenB, tokenC, tokenA);
             } else {
                 //swapping B -> C and A
-                swapOneToTwo(avgRatio, tokenB, ratioB, tokenA, tokenC);
+                swapOneToTwo(tokenB, tokenA, tokenC);
             }
 
         } else {
             //We know A and B are below so C has to be the only one above the avg
             //swap C -> A and B
-            swapOneToTwo(avgRatio, tokenC, ratioC, tokenA, tokenB);
-
+            swapOneToTwo(tokenC, tokenA, tokenB);
         }
     }
 
@@ -639,54 +718,43 @@ abstract contract Tripod {
      *  Function to be called during rebalancing.
      *  This will swap the extra tokens from the one that has returned the highest amount to the other two
      *  in relation to what they need attempting to make everything as equal as possible
+     *  The math is all handled by the functions in TripodMath.sol
      *  All minAmountToSell checks will be handled in the swap function
-     * @param avgRatio, The average Ratio from their start we want to end all tokens as close to as possible
      * @param toSwapToken, the token we will be swapping from to the other two
-     * @param toSwapRatio, The current ratio for the token we are swapping from
      * @param token0Address, address of one of the tokens we are swapping to
-     * @param token0Ratio, the current ratio for the first token we are swapping to
      * @param token1Address, address of the second token we are swapping to
-     * @param token1Ratio, the current ratio of the second token we are swapping to
     */
     function swapOneToTwo(
-        uint256 avgRatio,
         address toSwapToken,
-        uint256 toSwapRatio,
         address token0Address,
         address token1Address
     ) internal {
-        uint256 amountToSell;
         uint256 swapTo0;
         uint256 swapTo1;
-
+        
         unchecked {
-            uint256 a0 = invested[toSwapToken];
-            uint256 a1 = IERC20(toSwapToken).balanceOf(address(this));
-            uint256 b0 = invested[token0Address];
-            uint256 b1 = IERC20(token0Address).balanceOf(address(this));
-
-            //Calculates the difference between current amount and desired amount in token terms
-            amountToSell = (toSwapRatio - avgRatio) * a0 / RATIO_PRECISION;
-
-            uint256 decimal = IERC20Extended(toSwapToken).decimals();
-            uint256 toDecimals = IERC20Extended(token0Address).decimals();
-            
-            //e = exchangeRate of token 1 tokenA in terms of tokenB
-            uint256 e = quote(toSwapToken, token0Address, 10 ** decimal);
-            //This is used to make sure we dont underflow on division if the token decimals differ
-            uint256 precisionDiff = toDecimals > decimal ? 10 ** (toDecimals - decimal) : 1;
-
-            //P is the propotion of the amountToSell that gets swapped to tokenB repersented as 1e18
-            //p = (1/en)*((b0(a1-n)/a0)-b1), where n=amountToSell
-            uint256 p = (RATIO_PRECISION * ((10 ** decimal) * precisionDiff) / (e * amountToSell)) * 
-                            ((b0 * (a1 - amountToSell) / a0) - b1) / precisionDiff;
-
-            swapTo0 = amountToSell * p / RATIO_PRECISION;
+            uint256 precision = 10 ** IERC20Extended(toSwapToken).decimals();
+            // n = the amount of toSwapToken to sell
+            // p = the percent of n to swap to token0Address repersented as 1e18
+            (uint256 n, uint256 p) = getNandP(RebalanceInfo(
+                precision,
+                invested[toSwapToken],
+                IERC20(toSwapToken).balanceOf(address(this)),
+                invested[token0Address],
+                IERC20(token0Address).balanceOf(address(this)),
+                quote(toSwapToken, token0Address, precision),
+                0,
+                invested[token1Address],
+                IERC20(token1Address).balanceOf(address(this)),
+                quote(toSwapToken, token1Address, precision),
+                0
+            ));
+            //swapTo0 = the amount to sell * The percent going to 0
+            swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
-            swapTo1 = amountToSell - swapTo0;
+            swapTo1 = n - swapTo0;
         }
-        console.log("Swapping : ", swapTo0, "to token 0, and ", swapTo1);
-
+        
         swap(
             toSwapToken, 
             token0Address, 
@@ -707,30 +775,31 @@ abstract contract Tripod {
      *  Function to be called during rebalancing.
      *  This will swap the extra tokens from the two that returned raios higher than target return to the other one
      *  in relation to what they gained attempting to make everything as equal as possible
+     *  The math is all handled by the functions in TripodMath.sol
      *  All minAmountToSell checks will be handled in the swap function
-     * @param avgRatio, The average Ratio from their start we want to end all tokens as close to as possible
      * @param token0Address, address of one of the tokens we are swapping from
-     * @param token0Ratio, the current ratio for the first token we are swapping from
      * @param token1Address, address of the second token we are swapping from
-     * @param token1Ratio, the current ratio of the second token we are swapping from
      * @param toTokenAddress, address of the token we are swapping to
     */
     function swapTwoToOne(
-        uint256 avgRatio,
         address token0Address,
-        uint256 token0Ratio,
         address token1Address,
-        uint256 token1Ratio,
         address toTokenAddress
     ) internal {
-        uint256 toSwapFrom0;
-        uint256 toSwapFrom1;
 
-        unchecked {
-            //Calculates the difference between current amount and desired amount in token terms
-            toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
-            toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
-        }
+        (uint256 toSwapFrom0, uint256 toSwapFrom1) = getNbAndNc(RebalanceInfo(
+            0,
+            invested[toTokenAddress],
+            IERC20(toTokenAddress).balanceOf(address(this)),
+            invested[token0Address],
+            IERC20(token0Address).balanceOf(address(this)),
+            quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
+            10 ** IERC20Extended(token0Address).decimals(),
+            invested[token1Address],
+            IERC20(token1Address).balanceOf(address(this)),
+            quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
+            10 ** IERC20Extended(token1Address).decimals()
+        ));
 
         swap(
             token0Address, 
@@ -747,7 +816,24 @@ abstract contract Tripod {
         );
     }
 
-    
+    /*
+    * @notice
+    *   Function used to determine wether or not the ratios between the 3 tokens are close enough 
+    *       that it is not worth the cost to do any rebalancing
+    * @param ratio0, the current ratio of the first token to check
+    * @param ratio1, the current ratio of the second token to check
+    * @return boolean repersenting true if the ratios are withen the range to not need to rebalance 
+    */
+    function isCloseEnough(uint256 ratio0, uint256 ratio1) public view returns(bool) {
+        if(ratio0 == 0 && ratio1 ==0) return true;
+
+        uint256 delta = ratio0 > ratio1 ? ratio0 - ratio1 : ratio1 - ratio0;
+        //We use one lower decimal than our maxPercent loss. So if maxPercentLoss == .1 we wont rebalance withen .01
+        uint256 maxRelDelta = ratio1 / (RATIO_PRECISION / (maxPercentageLoss / 10));
+
+        if (delta < maxRelDelta) return true;
+    }
+
     /*
      * @notice
      *  Function estimating the current assets in the tripod, taking into account:
@@ -808,26 +894,6 @@ abstract contract Tripod {
     }
 
     /*
-    * @notice
-    *   We use this struct in the qoute rebalance function for quoteSwapOneToTwo() in order to avoid stack to deep errors
-    * @param avgRatio, the weighted average return we want all tokens to end at
-    * @param toSwapToken, the token we are swapping from
-    * @param toSwapRatio, the current ratio for the token we are swapping from
-    * @param endingToSwap,  the amount of toSwapToken we expect to have before rebalancing, ie a1
-    * @param token0Address, the address of one of the tokens we are swapping to
-    * @param ending0Token, the amount of token0Address we expect to have before rebalancing, i.e b1
-    * @param token1Address, the address of the other token we are swapping to
-    */
-    struct QuoteInfo {
-        uint256 avgRatio;
-        address toSwapToken;
-        uint256 toSwapRatio;
-        uint256 endingToSwap;
-        address token0Address;
-        uint256 ending0Token;
-        address token1Address;
-    }
-    /*
     * @notice 
     *    This function is a fucking disaster.
     *    But it works...
@@ -848,8 +914,8 @@ abstract contract Tripod {
                     startingC
                 );
         
-        //If they are all the same we dont need to do anything
-        if(ratioA == ratioB && ratioB == ratioC) {
+        //If they are all the same or very close we dont need to do anything
+        if(isCloseEnough(ratioA, ratioB) && isCloseEnough(ratioB, ratioC)) {
             return(startingA, startingB, startingC);
         }
         // Calculate the average ratio. Could be at a loss does not matter here
@@ -857,31 +923,34 @@ abstract contract Tripod {
         unchecked{
             avgRatio = (ratioA * investedWeight[tokenA] + ratioB * investedWeight[tokenB] + ratioC * investedWeight[tokenC]) / RATIO_PRECISION;
         }
-        
+
         uint256 change0;
         uint256 change1;
         uint256 change2;
+        RebalanceInfo memory info;
         //See Rebalance() for explanation
         if(ratioA > avgRatio) {
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
+                info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenB, ratioB, tokenC);
+                    quoteSwapTwoToOne(info, tokenA, tokenB, tokenC);
                 return ((startingA - change0), 
                             (startingB - change1), 
                                 (startingC + change2));
             } else if (ratioC > avgRatio) {
                 //swapping A and C -> B
+                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(avgRatio, tokenA, ratioA, tokenC, ratioC, tokenB);
+                    quoteSwapTwoToOne(info, tokenA, tokenC, tokenB);
                 return ((startingA - change0), 
                             (startingB + change2), 
                                 (startingC - change1));
             } else {
                 //Swapping A -> B and C
-                QuoteInfo memory info = QuoteInfo(avgRatio, tokenA, ratioA, startingA, tokenB, startingB, tokenC);
+                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapOneToTwo(info);
+                    quoteSwapOneToTwo(info, tokenA, tokenB, tokenC);
                 return ((startingA - change0), 
                             (startingB + change1), 
                                 (startingC + change2));
@@ -890,16 +959,17 @@ abstract contract Tripod {
             //We know A is below avg so we just need to check C
             if (ratioC > avgRatio) {
                 //Swap B and C -> A
+                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(avgRatio, tokenB, ratioB, tokenC, ratioC, tokenA);
+                    quoteSwapTwoToOne(info, tokenB, tokenC, tokenA);
                 return ((startingA + change2), 
                             (startingB - change0), 
                                 (startingC - change1));
             } else {
                 //swapping B -> A and C
-                QuoteInfo memory info = QuoteInfo(avgRatio, tokenB, ratioB, startingB, tokenA, startingA, tokenC);
+                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapOneToTwo(info);
+                    quoteSwapOneToTwo(info, tokenB, tokenA, tokenC);
                 return ((startingA + change1), 
                             (startingB - change0), 
                                 (startingC + change2));
@@ -907,9 +977,9 @@ abstract contract Tripod {
         } else {
             //We know A and B are below so C has to be the only one above the avg
             //swap C -> A and B
-            QuoteInfo memory info = QuoteInfo(avgRatio, tokenC, ratioC, startingC, tokenA, startingA, tokenB);
+            info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
             (change0, change1, change2) = 
-                quoteSwapOneToTwo(info);
+                quoteSwapOneToTwo(info, tokenC, tokenA, tokenB);
             return ((startingA + change1), 
                         (startingB + change2), 
                             (startingC - change0));
@@ -923,46 +993,55 @@ abstract contract Tripod {
      *  in relation to what they need attempting to make everything as equal as possible
      *  will return the absolute changes expected for each token, accounting will take place in parent function
      * @param info, struct of all needed info OF token addresses and amounts
+     * @param toSwapToken, the token we will be swapping from to the other two
+     * @param token0Address, address of one of the tokens we are swapping to
+     * @param token1Address, address of the second token we are swapping to
      * @return negative change in toSwapToken, positive change for token0, positive change for token1
     */
-    function quoteSwapOneToTwo(QuoteInfo memory info) 
-        internal 
-        view 
-        returns (uint256 amountToSell, uint256 amountOut, uint256 amountOut2) {
+    function quoteSwapOneToTwo(
+        RebalanceInfo memory info, 
+        address toSwapFrom, 
+        address toSwapTo0, 
+        address toSwapTo1
+    ) internal view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
         uint256 swapTo0;
         uint256 swapTo1;
 
         unchecked {
-            //Calculates the difference between current amount and desired amount in token terms
-            amountToSell = (info.toSwapRatio - info.avgRatio) * invested[info.toSwapToken] / RATIO_PRECISION;
-
-            uint256 decimal = IERC20Extended(info.toSwapToken).decimals();
-            uint256 toDecimals = IERC20Extended(info.token0Address).decimals();
+            uint256 precision = 10 ** IERC20Extended(toSwapFrom).decimals();
             
-            //This is used to make sure we dont underflow on division if the token decimals differ
-            uint256 precisionDiff = toDecimals > decimal ? 10 ** (toDecimals - decimal) : 1;
+            info = RebalanceInfo(
+                precision,
+                invested[toSwapFrom],
+                info.a1,
+                invested[toSwapTo0],
+                info.b1,
+                quote(toSwapFrom, toSwapTo0, precision),
+                0,
+                invested[toSwapTo1],
+                info.c1,
+                quote(toSwapFrom, toSwapTo1, precision),
+                0
+            );
 
-            //P is the propotion of the amountToSell that gets swapped to tokenB repersented as 1e18
-            //p = (1/en)*((b0(a1-n)/a0)-b1), where n=amountToSell and e = exchangeRate of 1 token tokenA in terms of tokenB
-            uint256 p = ((RATIO_PRECISION * ((10 ** decimal) * precisionDiff) / 
-                            (quote(info.toSwapToken, info.token0Address, 10 ** decimal) * amountToSell)) * 
-                                ((invested[info.token0Address] * (info.endingToSwap - amountToSell) / invested[info.toSwapToken]) - info.ending0Token) 
-                                    / precisionDiff);
+            uint256 p;
 
-            swapTo0 = amountToSell * p / RATIO_PRECISION;
+            (n, p) = getNandP(info);
+
+            swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
-            swapTo1 = amountToSell - swapTo0;
+            swapTo1 = n - swapTo0;
         }
 
         amountOut = quote(
-            info.toSwapToken, 
-            info.token0Address, 
+            toSwapFrom, 
+            toSwapTo0, 
             swapTo0
         );
 
         amountOut2 = quote(
-            info.toSwapToken, 
-            info.token1Address, 
+            toSwapFrom, 
+            toSwapTo1, 
             swapTo1
         );
     }   
@@ -973,30 +1052,34 @@ abstract contract Tripod {
      *  This will swap the extra tokens from the two that returned raios higher than target return to the other one
      *  in relation to what they gained attempting to make everything as equal as possible
      *  will return the absolute changes expected for each token, accounting will take place in parent function
-     * @param avgRatio, The average Ratio from their start we want to end all tokens as close to as possible
+     * @param info, struct of all needed info OF token addresses and amounts
      * @param token0Address, address of one of the tokens we are swapping from
-     * @param token0Ratio, the current ratio for the first token we are swapping from
      * @param token1Address, address of the second token we are swapping from
-     * @param token1Ratio, the current ratio of the second token we are swapping from
      * @param toTokenAddress, address of the token we are swapping to
      * @return negative change for token0, negative change for token1, positive change for toTokenAddress
     */
     function quoteSwapTwoToOne(
-        uint256 avgRatio,
+        RebalanceInfo memory info,
         address token0Address,
-        uint256 token0Ratio,
         address token1Address,
-        uint256 token1Ratio,
         address toTokenAddress
     ) internal view returns(uint256, uint256, uint256) {
-        uint256 toSwapFrom0;
-        uint256 toSwapFrom1;
 
-        unchecked {
-            //Calculates the difference between current amount and desired amount in token terms
-            toSwapFrom0 = (token0Ratio - avgRatio) * invested[token0Address] / RATIO_PRECISION;
-            toSwapFrom1 = (token1Ratio - avgRatio) * invested[token1Address] / RATIO_PRECISION;
-        }
+        info = RebalanceInfo(
+            0,
+            invested[toTokenAddress],
+            info.a1,
+            invested[token0Address],
+            info.b1,
+            quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
+            10 ** IERC20Extended(token0Address).decimals(),
+            invested[token1Address],
+            info.c1,
+            quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
+            10 ** IERC20Extended(token1Address).decimals()
+        );
+
+        (uint256 toSwapFrom0, uint256 toSwapFrom1) = getNbAndNc(info);
 
         uint256 amountOut = quote(
             token0Address, 
@@ -1114,6 +1197,7 @@ abstract contract Tripod {
                 token,
                 address(0x0000000000000000000000000000000000000348) // USD
             );
+
         require(price > 0, "Chainlink price <= 0");
         require(updateTime != 0, "Incomplete round");
         require(answeredInRound >= roundId, "Stale price");
@@ -1489,7 +1573,6 @@ abstract contract Tripod {
         } else {
             revert("Unsupported token");
         }
-
     }
 
     /*

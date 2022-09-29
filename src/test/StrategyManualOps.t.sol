@@ -47,12 +47,12 @@ contract ManualOpsTest is StrategyFixture {
         skip(7 hours);
 
         uint256 lpBalance = tripod.totalLpBalance(); 
-        (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
+        //(uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
         tripod.removeLiquidityManually(
-            _a * 9_900 / 10_000,
-            _b * 9_900 / 10_000,
-            _c * 9_900 / 10_000
+            tripod.invested(tripod.tokenA()) * 9_800 / 10_000,
+            tripod.invested(tripod.tokenB()) * 9_800 / 10_000,
+            tripod.invested(tripod.tokenC()) * 9_800 / 10_000
         );
 
         assertEq(tripod.balanceOfPool(), 0, "balance of pool off");
@@ -71,7 +71,7 @@ contract ManualOpsTest is StrategyFixture {
 
         skip(7 hours);
 
-        uint256 lpBalance = tripod.totalLpBalance(); 
+        //uint256 lpBalance = tripod.totalLpBalance(); 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
         vm.expectRevert();
