@@ -53,6 +53,104 @@ contract StrategyMigrationTest is StrategyFixture {
         );
     }
 
+    function testCloneTripodFromOldToNewPool(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        //get the old a-bb-usd pool
+        poolUsing = pools[3];
+        
+        delete assetFixtures;
+
+        //console.log("Deploying vaults and providers");
+        for (uint8 i = 0; i < poolUsing.wantTokens.length; ++i) {
+            string memory _tokenToTest = poolUsing.wantTokens[i];
+            IERC20 _want = IERC20(tokenAddrs[_tokenToTest]);
+
+            (address _vault, address _strategy) = deployVaultAndStrategy(
+                address(_want),
+                gov,
+                rewards,
+                "",
+                "",
+                guardian,
+                management,
+                keeper,
+                strategist
+            );
+
+            assetFixtures.push(AssetFixture(IVault(_vault), ProviderStrategy(_strategy), _want, _tokenToTest));
+            fixture[address(_want)] = assetFixtures[i];
+
+            vm.label(address(_vault), string(abi.encodePacked(_tokenToTest, "Vault")));
+            vm.label(address(_strategy), string(abi.encodePacked(_tokenToTest, "Strategy")));
+            vm.label(address(_want), _tokenToTest);
+        }
+        //console.log("Deploying tripod");
+        //Deploye Tripod Strategy
+        deployTripod(
+            address(assetFixtures[0].strategy),
+            address(assetFixtures[1].strategy),
+            address(assetFixtures[2].strategy),
+            address(weth),
+            poolUsing.pool,
+            poolUsing.poolToken,
+            poolUsing.rewardsContract
+        );
+
+        //console.log("Setting tripod");
+        //Add the tripod to each providor strategy
+        setTripod();
+
+        //clone old pool tripod with new pool
+        poolUsing = pools[2];
+
+        address newTripod = tripod.cloneBalancerTripod(
+            address(assetFixtures[0].strategy),
+            address(assetFixtures[1].strategy),
+            address(assetFixtures[2].strategy),
+            address(weth),
+            poolUsing.pool,
+            poolUsing.rewardsContract
+        );
+
+        BalancerTripod _newTripod = BalancerTripod(newTripod);
+
+        assertEq(poolUsing.pool, _newTripod.pool());
+        assertTrue(!_newTripod.isOriginal());
+
+        vm.expectRevert(bytes("!original"));
+
+        _newTripod.cloneBalancerTripod(
+            address(assetFixtures[0].strategy),
+            address(assetFixtures[1].strategy),
+            address(assetFixtures[2].strategy),
+            address(weth),
+            poolUsing.pool,
+            poolUsing.rewardsContract
+        );
+
+        vm.expectRevert(bytes("tripod already initialized"));
+
+        _newTripod.initialize(
+            address(assetFixtures[0].strategy),
+            address(assetFixtures[1].strategy),
+            address(assetFixtures[2].strategy),
+            address(weth),
+            poolUsing.pool,
+            poolUsing.rewardsContract
+        );
+
+        depositAllVaultsAndHarvest(_amount);
+
+        deal(crv, address(tripod), _amount/100);
+        deal(cvx, address(tripod), _amount/100);
+        setProvidersHealthCheck(false);
+        // Harvest 2: Realize profit
+        skip(1);
+        vm.prank(keeper);
+        tripod.harvest();
+    }
+
+
     function testMigrateProvider(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
