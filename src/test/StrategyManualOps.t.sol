@@ -25,9 +25,9 @@ contract ManualOpsTest is StrategyFixture {
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
         tripod.liquidatePositionManually(
-            _a * 9_800 / 10_000,
-            _b * 9_800 / 10_000,
-            _c * 9_800 / 10_000
+            _a * 9_900 / 10_000,
+            _b * 9_900 / 10_000,
+            _c * 9_900 / 10_000
         );
         
 
@@ -47,19 +47,20 @@ contract ManualOpsTest is StrategyFixture {
         skip(7 hours);
 
         uint256 lpBalance = tripod.totalLpBalance(); 
-        (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
+        //(uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
         tripod.removeLiquidityManually(
-            lpBalance/ 2,
-            (_a / 2) * 9_800 / 10_000,
-            (_b / 2) * 9_800 / 10_000,
-            (_c / 2) * 9_800 / 10_000
+            tripod.invested(tripod.tokenA()) * 9_800 / 10_000,
+            tripod.invested(tripod.tokenB()) * 9_800 / 10_000,
+            tripod.investd(tripod.tokenC()) * 9_800 / 10_000
         );
 
-        assertRelApproxEq(tripod.balanceOfStake(), lpBalance / 2, DELTA);
+        assertEq(tripod.balanceOfPool(), 0, "balance of pool off");
+        assertEq(tripod.balanceOfStake(), 0);
         assertGt(tripod.balanceOfA(), 0, "A balance");
         assertGt(tripod.balanceOfC(), 0, "c balance");
         assertGt(tripod.balanceOfB(), 0, "b balance");
+        assertEq(tripod.invested(tripod.tokenA()), 0, "invested not resset");
     }
 
     function testManualLiquidateFail(uint256 _amount) public {
@@ -73,12 +74,11 @@ contract ManualOpsTest is StrategyFixture {
         uint256 lpBalance = tripod.totalLpBalance(); 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
-        vm.expectRevert("Slippage screwed you");
+        vm.expectRevert(bytes("Withdrawal resulted in fewer coins than expected"));
         tripod.removeLiquidityManually(
-            lpBalance/ 2,
-            (_a /2) * 11_000 / 10_000,
-            (_b / 2) * 11_000 / 10_000,
-            (_c / 2) * 11_000 / 10_000
+            _a * 11_000 / 10_000,
+            _b * 11_000 / 10_000,
+            _c * 11_000 / 10_000
         );
     }
 
@@ -89,45 +89,32 @@ contract ManualOpsTest is StrategyFixture {
         deal(cvx, address(tripod), 4e18);
         assertEq(IERC20(cvx).balanceOf(address(tripod)), 4e18);
 
-        IERC20 swapTo = assetFixtures[_amount % 3].want;
-
-        uint256 beforeBal = swapTo.balanceOf(address(tripod));
+        IERC20 token = IERC20(tokenAddrs["USDC"]);
+        uint256 before = token.balanceOf(address(tripod));
         vm.startPrank(management);
         tripod.swapTokenForTokenManually(
             cvx,
-            address(swapTo),
+            address(token),
             4e18,
             0,
             false
         );
 
-        IERC20 next = assetFixtures[(_amount + 1) % 3].want;
-
-        assertGt(swapTo.balanceOf(address(tripod)), beforeBal);
-        //vm.prank(management);
-        tripod.swapTokenForTokenManually(
-            address(swapTo),
-            address(next),
-            swapTo.balanceOf(address(tripod)),
-            0,
-            true
-        );
-
-        assertEq(swapTo.balanceOf(address(tripod)), 0);
-        assertGt(next.balanceOf(address(tripod)), 0);
+        assertGt(token.balanceOf(address(tripod)), before);
+        assertEq(IERC20(cvx).balanceOf(address(tripod)), 0);
     }
 
     function testReturnFundsManually(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
         skip(7 hours);
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
         tripod.liquidatePositionManually(
-            0,
-            0,
-            0
+            _a * 9_900 / 10_000,
+            _b * 9_900 / 10_000,
+            _c * 9_900 / 10_000
         );
 
         vm.prank(gov);
@@ -136,6 +123,9 @@ contract ManualOpsTest is StrategyFixture {
         assertEq(tripod.balanceOfA(), 0, "A balance");
         assertEq(tripod.balanceOfB(), 0, "b balance");
         assertEq(tripod.balanceOfC(), 0, "c balance");
+        assertRelApproxEq(assetFixtures[0].strategy.balanceOfWant(), deposited[0], DELTA);
+        assertRelApproxEq(assetFixtures[1].strategy.balanceOfWant(), deposited[1], DELTA);
+        assertRelApproxEq(assetFixtures[2].strategy.balanceOfWant(), deposited[2], DELTA);
     }
     
     function testSetKeeper(uint256 _amount) public {
@@ -145,8 +135,9 @@ contract ManualOpsTest is StrategyFixture {
         vm.prank(gov);
         tripod.setKeeper(address(69));
 
-        skip(1 days);
-
+        skip(6 hours);
+        setProvidersHealthCheck(false);
+        
         vm.prank(keeper);
         vm.expectRevert("!authorized");
         tripod.harvest();
@@ -167,5 +158,6 @@ contract ManualOpsTest is StrategyFixture {
         assertEq(tripod.getRewardTokensLength(), 2);
 
     }
+
 }
 

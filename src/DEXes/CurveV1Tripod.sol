@@ -374,9 +374,9 @@ contract CurveV1Tripod is NoHedgeTripod {
         amounts[uint256(int256(index[tokenB]))] = minBOut;
         amounts[uint256(int256(index[tokenC]))] = minCOut;
 
-        ICurveFi(pool).remove_liquidity_imbalance(
-            amounts,
-            _amount 
+        ICurveFi(pool).remove_liquidity(
+            _amount,
+            amounts
         );
     }
 
