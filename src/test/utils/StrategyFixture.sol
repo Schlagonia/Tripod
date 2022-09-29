@@ -309,7 +309,14 @@ contract StrategyFixture is ExtendedTest {
             0x689440f2Ff927E1f24c72F1087E1FAF471eCe1c8,
             ["USDC", "DAI", "USDT"]
         ));
-        //Balancer aa-b-pool
+        //new Balancer aa-bb-pool
+        pools.push(Pool(
+            0xA13a9247ea42D743238089903570127DdA72fE44,
+            address(0),
+            0x1e9F147241dA9009417811ad5858f22Ed1F9F9fd,
+            ["USDT", "DAI", "USDC"]
+        ));
+        //Old Balancer aa-bb-pool
         pools.push(Pool(
             0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2,
             address(0),

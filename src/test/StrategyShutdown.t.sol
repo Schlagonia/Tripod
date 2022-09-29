@@ -25,9 +25,8 @@ contract StrategyShutdownTest is StrategyFixture {
 
         AssetFixture memory _fixture = assetFixtures[index];
         IVault _vault = _fixture.vault;
-        ProviderStrategy _provider = _fixture.strategy;
+        //ProviderStrategy _provider = _fixture.strategy;
         IERC20 _want = _fixture.want;
-
 
         uint256 bal = _want.balanceOf(user);
         if (bal > 0) {
@@ -35,7 +34,11 @@ contract StrategyShutdownTest is StrategyFixture {
             _want.transfer(address(0), bal);
         }
 
-        skip(7 hours);
+        skip(1);
+        //Earn interest
+        deal(cvx, address(tripod), _amount/100);
+        deal(crv, address(tripod), _amount/100);
+        setProvidersHealthCheck(false);
         //uint256 preBalance = _provider.estimatedTotalAssets();
         // Set Emergency
         vm.prank(gov);

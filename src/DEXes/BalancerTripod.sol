@@ -31,7 +31,8 @@ contract BalancerTripod is NoHedgeTripod {
     //address of the trade factory to be used for extra rewards
     address public tradeFactory;
 
-    //Curve 3 Pool for easy quoting of stable coin swaps
+    //Curve 3 Pool is used for rebalancing and quoting of stable coin swaps
+    //  due to easy getAmountOut functionality
     ICurveFi internal constant curvePool =
         ICurveFi(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
     //Index mapping provider token to its crv index 
@@ -169,6 +170,7 @@ contract BalancerTripod is NoHedgeTripod {
         maxApprove(tokenB, address(balancerVault));
         maxApprove(tokenC, address(balancerVault));
         maxApprove(pool, address(depositContract));
+        //Max approve the curvePool as well for swaps during rebalnce
         maxApprove(tokenA, address(curvePool));
         maxApprove(tokenB, address(curvePool));
         maxApprove(tokenC, address(curvePool));
@@ -289,6 +291,12 @@ contract BalancerTripod is NoHedgeTripod {
         return rewardsContract.balanceOf(address(this));
     }
 
+    /*
+    * @notice
+    *   This will return the expected balance of each token based on our lp balance
+    *       This will not take into account the invested weight so it can be used to determine how in
+            or out balance the pool currently is
+    */
     function balanceOfTokensInLP()
         public
         view
@@ -527,9 +535,7 @@ contract BalancerTripod is NoHedgeTripod {
         require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid _from");
         uint256 prevBalance = IERC20(_tokenTo).balanceOf(address(this));
 
-        //ICurveFi _pool = ICurveFi(pool);
-
-        // Perform swap
+        // Perform swap through curve since thats what rebalance quote are off of
         curvePool.exchange(
             curveIndex[_tokenFrom], 
             curveIndex[_tokenTo],

@@ -59,7 +59,7 @@ contract StrategyOperationsTest is StrategyFixture {
             fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 5_000);
         }
 
-        skip(1);
+        skip(1 days);
         vm.prank(keeper);
         tripod.harvest();
 
@@ -73,7 +73,7 @@ contract StrategyOperationsTest is StrategyFixture {
             vm.prank(gov);
             fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 10_000);
         }
-        skip(1);
+        skip(1 days);
         vm.prank(keeper);
         tripod.harvest();
 
