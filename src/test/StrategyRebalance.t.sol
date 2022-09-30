@@ -9,6 +9,7 @@ import {BalancerTripod} from "../DEXes/BalancerTripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
+import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 import {IVault} from "../interfaces/Vault.sol";
 
 contract RebalanceTest is StrategyFixture {

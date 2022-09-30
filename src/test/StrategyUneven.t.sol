@@ -247,7 +247,7 @@ contract StrategyUnevenTest is StrategyFixture {
 function testProfitableRebalanceTowToOne(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         //_amount = 4284287855830879748964;
-        uint256[3] memory deposited = depositAllVaultsAndHarvestUneven(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
         console.log("Deposited 0 ", deposited[0]);
         console.log("deposited 1 ", deposited[1]);
         console.log("Deposited 2 ", deposited[2]);

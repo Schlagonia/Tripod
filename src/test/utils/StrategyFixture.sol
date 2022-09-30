@@ -343,4 +343,5 @@ contract StrategyFixture is ExtendedTest {
         tokenPrices["USDC"] = AggregatorV3Interface(0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6).latestAnswer();
         tokenPrices["DAI"] = AggregatorV3Interface(0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9).latestAnswer();
     }
+
 }   

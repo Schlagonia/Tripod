@@ -170,6 +170,7 @@ contract BalancerTripod is NoHedgeTripod {
         maxApprove(tokenB, address(balancerVault));
         maxApprove(tokenC, address(balancerVault));
         maxApprove(pool, address(depositContract));
+        
         //Max approve the curvePool as well for swaps during rebalnce
         maxApprove(tokenA, address(curvePool));
         maxApprove(tokenB, address(curvePool));
@@ -584,7 +585,7 @@ contract BalancerTripod is NoHedgeTripod {
             return uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
         } else if(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC){
 
-            // Call the quote function in CRV pool
+            // Call the quote function in CRV 3pool
             return curvePool.get_dy(
                 curveIndex[_tokenFrom], 
                 curveIndex[_tokenTo], 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.12;
 pragma experimental ABIEncoderV2;
-
 /*    :::::::::::       :::::::::       :::::::::::       :::::::::       ::::::::       ::::::::: 
          :+:           :+:    :+:          :+:           :+:    :+:     :+:    :+:      :+:    :+: 
         +:+           +:+    +:+          +:+           +:+    +:+     +:+    +:+      +:+    +:+  
@@ -72,10 +71,10 @@ pragma experimental ABIEncoderV2;
 .........:%%,,%?.:%%,........................,%%,:S*.%%........................*S+.?S:,%%,..........
 .........;%?,+%%;:%%,........................,%%,:S*.%%,.......................?S;,?%+,%%:..........
 .........;S?*S%%S+%%,........................,%%,:S?,?%:.......................?%+?%%%;?%:..........
-........;%%;;;;::%%,.........................,%%;%SS??%:.......................?S;,,,,,%%:..........
-........;%%,....:%%:.........................,%%;....+%%,......................?S+....:%%;..........
-.......;?%%%;..:%%%%;........................:%SSS;.:%SSS+...................,?%S%*,.:%%%%*.........
-.......?%%%%*..?%%%%*........................:;;;;,.,;;;;:....................;????*,.+???*+......*/
+.........;%%;;;;::%%,........................,%%;%SS??%:.......................?S;,,,,,%%:..........
+.........;%%,....:%%:........................,%%;....+%%,......................?S+....:%%;..........
+........;?%%%;..:%%%%;.......................:%SSS;.:%SSS+...................,?%S%*,.:%%%%*.........
+........?%%%%*..?%%%%*.......................:;;;;,.,;;;;:....................;????*,.+???*+......*/
 
 import "./interfaces/IERC20Extended.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
@@ -506,6 +505,7 @@ abstract contract Tripod is TripodMath {
 
         // reset invested balances
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
+        investedWeight[tokenA] = investedWeight[tokenB] = investedWeight[tokenC] = 0;
     }
 
     /*
@@ -1194,7 +1194,7 @@ abstract contract Tripod is TripodMath {
         if(_token == 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599) token = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB;
 
         (uint80 roundId, int256 price,, uint256 updateTime, uint80 answeredInRound) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
-                _token,
+                token,
                 address(0x0000000000000000000000000000000000000348) // USD
             );
 
@@ -1475,6 +1475,7 @@ abstract contract Tripod is TripodMath {
         require(expectedBalanceC <= balanceOfC() - _c, "!sandwiched");
         // reset invested balances or we wont be able to open up a position again
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
+        investedWeight[tokenA] = investedWeight[tokenB] = investedWeight[tokenC] = 0;
     }
 
     /*
@@ -1510,6 +1511,7 @@ abstract contract Tripod is TripodMath {
 
         // reset invested balances or we wont be able to open up a position again
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
+        investedWeight[tokenA] = investedWeight[tokenB] = investedWeight[tokenC] = 0;
     }
 
     /*
