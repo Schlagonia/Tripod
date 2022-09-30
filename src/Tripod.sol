@@ -82,7 +82,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {TripodMath} from "./TripodMath.sol";
+import {TripodMath} from "./libraries/TripodMath.sol";
 import {IVault} from "./interfaces/Vault.sol";
 
 interface ProviderStrategy {
@@ -120,7 +120,7 @@ interface IBaseFee {
 ///
 ///     Made by Schlagania https://github.com/Schlagonia/Tripod adapted from the 2 token joint strategy https://github.com/fp-crypto/joint-strategy
 ///
-abstract contract Tripod is TripodMath {
+abstract contract Tripod {
     using SafeERC20 for IERC20;
     using Address for address;
 
@@ -736,19 +736,20 @@ abstract contract Tripod is TripodMath {
             uint256 precision = 10 ** IERC20Extended(toSwapToken).decimals();
             // n = the amount of toSwapToken to sell
             // p = the percent of n to swap to token0Address repersented as 1e18
-            (uint256 n, uint256 p) = getNandP(RebalanceInfo(
-                precision,
-                invested[toSwapToken],
-                IERC20(toSwapToken).balanceOf(address(this)),
-                invested[token0Address],
-                IERC20(token0Address).balanceOf(address(this)),
-                quote(toSwapToken, token0Address, precision),
-                0,
-                invested[token1Address],
-                IERC20(token1Address).balanceOf(address(this)),
-                quote(toSwapToken, token1Address, precision),
-                0
-            ));
+            (uint256 n, uint256 p) = TripodMath.getNandP(
+                TripodMath.RebalanceInfo(
+                    precision,
+                    invested[toSwapToken],
+                    IERC20(toSwapToken).balanceOf(address(this)),
+                    invested[token0Address],
+                    IERC20(token0Address).balanceOf(address(this)),
+                    quote(toSwapToken, token0Address, precision),
+                    0,
+                    invested[token1Address],
+                    IERC20(token1Address).balanceOf(address(this)),
+                    quote(toSwapToken, token1Address, precision),
+                    0
+                ));
             //swapTo0 = the amount to sell * The percent going to 0
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
@@ -787,18 +788,19 @@ abstract contract Tripod is TripodMath {
         address toTokenAddress
     ) internal {
 
-        (uint256 toSwapFrom0, uint256 toSwapFrom1) = getNbAndNc(RebalanceInfo(
-            0,
-            invested[toTokenAddress],
-            IERC20(toTokenAddress).balanceOf(address(this)),
-            invested[token0Address],
-            IERC20(token0Address).balanceOf(address(this)),
-            quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
-            10 ** IERC20Extended(token0Address).decimals(),
-            invested[token1Address],
-            IERC20(token1Address).balanceOf(address(this)),
-            quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
-            10 ** IERC20Extended(token1Address).decimals()
+        (uint256 toSwapFrom0, uint256 toSwapFrom1) = TripodMath.getNbAndNc(
+            TripodMath.RebalanceInfo(
+                0,
+                invested[toTokenAddress],
+                IERC20(toTokenAddress).balanceOf(address(this)),
+                invested[token0Address],
+                IERC20(token0Address).balanceOf(address(this)),
+                quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
+                10 ** IERC20Extended(token0Address).decimals(),
+                invested[token1Address],
+                IERC20(token1Address).balanceOf(address(this)),
+                quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
+                10 ** IERC20Extended(token1Address).decimals()
         ));
 
         swap(
@@ -927,12 +929,12 @@ abstract contract Tripod is TripodMath {
         uint256 change0;
         uint256 change1;
         uint256 change2;
-        RebalanceInfo memory info;
+        TripodMath.RebalanceInfo memory info;
         //See Rebalance() for explanation
         if(ratioA > avgRatio) {
             if (ratioB > avgRatio) {
                 //Swapping A and B -> C
-                info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
+                info = TripodMath.RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(info, tokenA, tokenB, tokenC);
                 return ((startingA - change0), 
@@ -940,7 +942,7 @@ abstract contract Tripod is TripodMath {
                                 (startingC + change2));
             } else if (ratioC > avgRatio) {
                 //swapping A and C -> B
-                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
+                info = TripodMath.RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(info, tokenA, tokenC, tokenB);
                 return ((startingA - change0), 
@@ -948,7 +950,7 @@ abstract contract Tripod is TripodMath {
                                 (startingC - change1));
             } else {
                 //Swapping A -> B and C
-                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
+                info = TripodMath.RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(info, tokenA, tokenB, tokenC);
                 return ((startingA - change0), 
@@ -959,7 +961,7 @@ abstract contract Tripod is TripodMath {
             //We know A is below avg so we just need to check C
             if (ratioC > avgRatio) {
                 //Swap B and C -> A
-                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
+                info = TripodMath.RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
                     quoteSwapTwoToOne(info, tokenB, tokenC, tokenA);
                 return ((startingA + change2), 
@@ -967,7 +969,7 @@ abstract contract Tripod is TripodMath {
                                 (startingC - change1));
             } else {
                 //swapping B -> A and C
-                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
+                info = TripodMath.RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
                     quoteSwapOneToTwo(info, tokenB, tokenA, tokenC);
                 return ((startingA + change1), 
@@ -977,7 +979,7 @@ abstract contract Tripod is TripodMath {
         } else {
             //We know A and B are below so C has to be the only one above the avg
             //swap C -> A and B
-            info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
+            info = TripodMath.RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
             (change0, change1, change2) = 
                 quoteSwapOneToTwo(info, tokenC, tokenA, tokenB);
             return ((startingA + change1), 
@@ -999,7 +1001,7 @@ abstract contract Tripod is TripodMath {
      * @return negative change in toSwapToken, positive change for token0, positive change for token1
     */
     function quoteSwapOneToTwo(
-        RebalanceInfo memory info, 
+        TripodMath.RebalanceInfo memory info, 
         address toSwapFrom, 
         address toSwapTo0, 
         address toSwapTo1
@@ -1010,7 +1012,7 @@ abstract contract Tripod is TripodMath {
         unchecked {
             uint256 precision = 10 ** IERC20Extended(toSwapFrom).decimals();
             
-            info = RebalanceInfo(
+            info = TripodMath.RebalanceInfo(
                 precision,
                 invested[toSwapFrom],
                 info.a1,
@@ -1026,7 +1028,7 @@ abstract contract Tripod is TripodMath {
 
             uint256 p;
 
-            (n, p) = getNandP(info);
+            (n, p) = TripodMath.getNandP(info);
 
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
@@ -1059,13 +1061,13 @@ abstract contract Tripod is TripodMath {
      * @return negative change for token0, negative change for token1, positive change for toTokenAddress
     */
     function quoteSwapTwoToOne(
-        RebalanceInfo memory info,
+        TripodMath.RebalanceInfo memory info,
         address token0Address,
         address token1Address,
         address toTokenAddress
     ) internal view returns(uint256, uint256, uint256) {
 
-        info = RebalanceInfo(
+        info = TripodMath.RebalanceInfo(
             0,
             invested[toTokenAddress],
             info.a1,
@@ -1079,7 +1081,7 @@ abstract contract Tripod is TripodMath {
             10 ** IERC20Extended(token1Address).decimals()
         );
 
-        (uint256 toSwapFrom0, uint256 toSwapFrom1) = getNbAndNc(info);
+        (uint256 toSwapFrom0, uint256 toSwapFrom1) = TripodMath.getNbAndNc(info);
 
         uint256 amountOut = quote(
             token0Address, 

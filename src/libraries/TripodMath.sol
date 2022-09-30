@@ -4,7 +4,7 @@ pragma experimental ABIEncoderV2;
 
 /// @title Tripod Math
 /// @notice Contains the Rebalancing Math for the Tripod. Used during both the rebalance and quote rebalance functions
-contract TripodMath {
+library TripodMath {
 
     /*
     * @notice
