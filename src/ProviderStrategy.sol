@@ -163,16 +163,34 @@ contract ProviderStrategy is BaseStrategyInitializable {
 
     function liquidatePosition(uint256 _amountNeeded)
         internal
-        view
         override
         returns (uint256 _liquidatedAmount, uint256 _loss)
     {
         uint256 availableAssets = balanceOfWant();
-        if (_amountNeeded > availableAssets) {
-            //Make sure we aren't reporting incorrect loss
-            require(TripodAPI(tripod).invested(address(want)) == 0, "Open Position");
-            _liquidatedAmount = availableAssets;
-            _loss = _amountNeeded - availableAssets;
+        if(_amountNeeded >= availableAssets) {
+            //If the Tripod is invested we will give the vault what we have but not report a loss
+            //There should not be loose want while invested
+            if(TripodAPI(tripod).invested(address(want)) != 0) {
+                _liquidatedAmount = availableAssets;
+
+            } else {
+                //If not invested check for any loose want still at Tripod
+                uint256 amount = want.balanceOf(tripod);
+            
+                if(amount > 0) {
+                    //If the Tripod has loose want pull it and recalculate amounts
+                    want.safeTransferFrom(tripod, address(this), amount);
+                    availableAssets = balanceOfWant();
+
+                    //Check if we got enough to cover whats needed
+                    if(availableAssets >= _amountNeeded) {
+                        return(_amountNeeded, 0);
+                    }
+                }
+                //This means Tripod is not invested and we need to report a loss
+                _liquidatedAmount = availableAssets;
+               _loss = _amountNeeded - availableAssets;
+            }
         } else {
             _liquidatedAmount = _amountNeeded;
         }
@@ -234,5 +252,4 @@ contract ProviderStrategy is BaseStrategyInitializable {
         // gas price is not important as this will only be used in triggers (queried from off-chain)
         return _amtInWei;
     }
-
 }
