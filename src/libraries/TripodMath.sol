@@ -9,7 +9,7 @@ library TripodMath {
     /*
     * @notice
     *   The rebalancing math aims to have each tokens relative return be equal after the rebalance irregardless of the strating weights or exchange rates
-    *   These function are colled either during swapOneToTwo() or swapTwoToOne() in the Tripod.sol https://github.com/Schlagonia/Tripod/blob/master/src/Tripod.sol
+    *   These function are called during swapOneToTwo() or swapTwoToOne() in the Tripod.sol https://github.com/Schlagonia/Tripod/blob/master/src/Tripod.sol
     *   All math was adopted from the original joint strategies https://github.com/fp-crypto/joint-strategy
 
         All equations will use the following variables:

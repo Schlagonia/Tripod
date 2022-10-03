@@ -84,6 +84,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {TripodMath} from "./libraries/TripodMath.sol";
 import {IVault} from "./interfaces/Vault.sol";
+import "forge-std/console.sol";
 
 interface ProviderStrategy {
     function vault() external view returns (IVault);
@@ -304,22 +305,6 @@ abstract contract Tripod {
     function shouldEndEpoch() public view virtual returns (bool);
 
     function _autoProtect() internal view virtual returns (bool);
-
-    /*
-     * @notice
-     *  Check wether a token address is part of rewards or not
-     * @param token, token address to check
-     * @return wether the provided token address is a reward for the strat or not
-     */
-    function _isReward(address token) internal view returns (bool) {
-        address[] memory _rewardTokens = rewardTokens;
-        for (uint256 i = 0; i < _rewardTokens.length; i++) {
-            if (_rewardTokens[i] == token) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     /* @notice
      *  Used to change `keeper`.
@@ -736,7 +721,7 @@ abstract contract Tripod {
             uint256 precision = 10 ** IERC20Extended(toSwapToken).decimals();
             // n = the amount of toSwapToken to sell
             // p = the percent of n to swap to token0Address repersented as 1e18
-            (uint256 n, uint256 p) = TripodMath.getNandP(
+            TripodMath.RebalanceInfo memory info = 
                 TripodMath.RebalanceInfo(
                     precision,
                     invested[toSwapToken],
@@ -749,13 +734,35 @@ abstract contract Tripod {
                     IERC20(token1Address).balanceOf(address(this)),
                     quote(toSwapToken, token1Address, precision),
                     0
-                ));
+                );
+            (uint256 n, uint256 p) = TripodMath.getNandP(info);
+
+            //swapTo0 = the amount to sell * The percent going to 0
+            swapTo0 = n * p / RATIO_PRECISION;
+            //To assure we dont sell to much 
+            swapTo1 = n - swapTo0;
+            //Due it again with a more accurate exchange rate
+            uint256 diff0 = swapTo0 > precision ? 
+                swapTo0 * precision / precision  : precision * precision/ swapTo0;
+            uint256 diff1 = swapTo0 > precision ? 
+                swapTo1 * precision / precision : precision * precision / swapTo1;
+
+            //Due it again with a more accurate exchange rate
+            info.eOfB = swapTo0 > precision ? 
+                quote(toSwapToken, token0Address, swapTo0) * precision / diff0 : 
+                    quote(toSwapToken, token0Address, swapTo0) * diff0 / precision;
+            info.eOfC = swapTo0 > precision ? 
+                quote(toSwapToken, token1Address, swapTo1) * precision / diff1 : 
+                    quote(toSwapToken, token1Address, swapTo1) * diff1 / precision;
+
+            (n, p) = TripodMath.getNandP(info);
+    
             //swapTo0 = the amount to sell * The percent going to 0
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
             swapTo1 = n - swapTo0;
         }
-        
+
         swap(
             toSwapToken, 
             token0Address, 
@@ -787,21 +794,44 @@ abstract contract Tripod {
         address token1Address,
         address toTokenAddress
     ) internal {
+        uint256 toSwapFrom0;
+        uint256 toSwapFrom1;
 
-        (uint256 toSwapFrom0, uint256 toSwapFrom1) = TripodMath.getNbAndNc(
-            TripodMath.RebalanceInfo(
-                0,
-                invested[toTokenAddress],
-                IERC20(toTokenAddress).balanceOf(address(this)),
-                invested[token0Address],
-                IERC20(token0Address).balanceOf(address(this)),
-                quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
-                10 ** IERC20Extended(token0Address).decimals(),
-                invested[token1Address],
-                IERC20(token1Address).balanceOf(address(this)),
-                quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
-                10 ** IERC20Extended(token1Address).decimals()
-        ));
+        unchecked {
+            uint256 precision0 = 10 ** IERC20Extended(token0Address).decimals();
+            uint256 precision1 = 10 ** IERC20Extended(token1Address).decimals();
+
+            TripodMath.RebalanceInfo memory info =
+                TripodMath.RebalanceInfo(
+                    0,
+                    invested[toTokenAddress],
+                    IERC20(toTokenAddress).balanceOf(address(this)),
+                    invested[token0Address],
+                    IERC20(token0Address).balanceOf(address(this)),
+                    quote(token0Address, toTokenAddress, precision0),
+                    precision0,
+                    invested[token1Address],
+                    IERC20(token1Address).balanceOf(address(this)),
+                    quote(token1Address, toTokenAddress, precision1),
+                    precision1
+            );
+            //Calculate how much of each token to sell
+            (toSwapFrom0, toSwapFrom1) = TripodMath.getNbAndNc(info);
+            //Get a more exact exchange rate and do it again
+            uint256 diff0 = toSwapFrom0 > precision0 ? 
+                toSwapFrom0 * precision0 / precision0 : precision0 * precision0 / toSwapFrom0;
+            uint256 diff1 = toSwapFrom1 > precision1 ? 
+                toSwapFrom1 * precision1 / precision1 : precision1 * precision1 / toSwapFrom1;
+
+            info.eOfB = toSwapFrom0 > precision0 ? 
+                quote(token0Address, toTokenAddress, toSwapFrom0) * precision0 / diff0 : 
+                    quote(token0Address, toTokenAddress, toSwapFrom0) * diff0 / precision0;
+            info.eOfC = toSwapFrom1 > precision1 ? 
+                quote(token1Address, toTokenAddress, toSwapFrom1) * precision1 / diff1 : 
+                    quote(token1Address, toTokenAddress, toSwapFrom1) * diff1 / precision1;
+
+            (toSwapFrom0, toSwapFrom1) = TripodMath.getNbAndNc(info);
+        }
 
         swap(
             token0Address, 
@@ -1008,6 +1038,7 @@ abstract contract Tripod {
     ) internal view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
         uint256 swapTo0;
         uint256 swapTo1;
+        uint256 p;
 
         unchecked {
             uint256 precision = 10 ** IERC20Extended(toSwapFrom).decimals();
@@ -1026,7 +1057,24 @@ abstract contract Tripod {
                 0
             );
 
-            uint256 p;
+            (n, p) = TripodMath.getNandP(info);
+
+            swapTo0 = n * p / RATIO_PRECISION;
+            //To assure we dont sell to much 
+            swapTo1 = n - swapTo0;
+
+            //Due it again with a more accurate exchange rate
+            uint256 diff0 = swapTo0 > precision ? 
+                swapTo0 * precision / precision  : precision * precision/ swapTo0;
+            uint256 diff1 = swapTo0 > precision ? 
+                swapTo1 * precision / precision : precision * precision / swapTo1;
+
+            info.eOfB = swapTo0 > precision ? 
+                quote(toSwapFrom, toSwapTo0, swapTo0) * precision / diff0 : 
+                    quote(toSwapFrom, toSwapTo0, swapTo0) * diff0 / precision;
+            info.eOfC = swapTo0 > precision ? 
+                quote(toSwapFrom, toSwapTo1, swapTo1) * precision / diff1 : 
+                    quote(toSwapFrom, toSwapTo1, swapTo1) * diff1 / precision;
 
             (n, p) = TripodMath.getNandP(info);
 
@@ -1066,22 +1114,44 @@ abstract contract Tripod {
         address token1Address,
         address toTokenAddress
     ) internal view returns(uint256, uint256, uint256) {
+        uint256 toSwapFrom0;
+        uint256 toSwapFrom1;
 
-        info = TripodMath.RebalanceInfo(
-            0,
-            invested[toTokenAddress],
-            info.a1,
-            invested[token0Address],
-            info.b1,
-            quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
-            10 ** IERC20Extended(token0Address).decimals(),
-            invested[token1Address],
-            info.c1,
-            quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
-            10 ** IERC20Extended(token1Address).decimals()
-        );
+        unchecked{
+            uint256 precision0 = 10 ** IERC20Extended(token0Address).decimals();
+            uint256 precision1 = 10 ** IERC20Extended(token1Address).decimals();
 
-        (uint256 toSwapFrom0, uint256 toSwapFrom1) = TripodMath.getNbAndNc(info);
+            info = TripodMath.RebalanceInfo(
+                0,
+                invested[toTokenAddress],
+                info.a1,
+                invested[token0Address],
+                info.b1,
+                quote(token0Address, toTokenAddress, precision0),
+                precision0,
+                invested[token1Address],
+                info.c1,
+                quote(token1Address, toTokenAddress, precision1),
+                precision1
+            );
+            //Get the amount we will need to sell from each token
+            (toSwapFrom0, toSwapFrom1) = TripodMath.getNbAndNc(info);
+
+            //Due it again with a more accurate exchange rate
+            uint256 diff0 = toSwapFrom0 > precision0 ? 
+                toSwapFrom0 * precision0 / precision0  : precision0 * precision0 / toSwapFrom0;
+            uint256 diff1 = toSwapFrom1 > precision1 ? 
+                toSwapFrom1 * precision1 / precision1 : precision1 * precision1 / toSwapFrom1;
+
+            info.eOfB = toSwapFrom0 > precision0 ? 
+                quote(token0Address, toTokenAddress, toSwapFrom0) * precision0 / diff0 : 
+                    quote(token0Address, toTokenAddress, toSwapFrom0) * diff0 / precision0;
+            info.eOfC = toSwapFrom1 > precision1 ? 
+                quote(token1Address, toTokenAddress, toSwapFrom1) * precision1 / diff1 : 
+                    quote(token1Address, toTokenAddress, toSwapFrom1) * diff1 / precision1;
+
+            (toSwapFrom0, toSwapFrom1) = TripodMath.getNbAndNc(info);
+        }
 
         uint256 amountOut = quote(
             token0Address, 

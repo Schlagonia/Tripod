@@ -50,6 +50,7 @@ contract RebalanceTest is StrategyFixture {
         assertGt(aRatio, 1e18);        
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
+        //assertTrue(false);
     }
 
     function testProfitableRebalanceTwoToOne(uint256 _amount) public {
@@ -90,6 +91,7 @@ contract RebalanceTest is StrategyFixture {
         assertGt(aRatio, 1e18);        
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
+        //assertTrue(false);
     }
 
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
