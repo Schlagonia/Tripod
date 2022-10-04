@@ -15,6 +15,7 @@ constructor-args :=
 
 build  :; forge build
 test   :; forge test -vv --fork-url ${FORK_URL} --etherscan-api-key ${ETHERSCAN_API_KEY}
+test-gas   :; forge test -vv --gas-report --fork-url ${FORK_URL} --etherscan-api-key ${ETHERSCAN_API_KEY}
 trace   :; forge test -vvv --fork-url ${FORK_URL} --etherscan-api-key ${ETHERSCAN_API_KEY}
 gas   :; forge test -vv --fork-url ${FORK_URL} --etherscan-api-key ${ETHERSCAN_API_KEY} --gas-report
 test-contract :; forge test -vv --fork-url ${FORK_URL} --match-contract $(contract) --etherscan-api-key ${ETHERSCAN_API_KEY}
