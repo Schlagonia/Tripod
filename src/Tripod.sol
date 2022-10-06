@@ -305,22 +305,6 @@ abstract contract Tripod {
 
     function _autoProtect() internal view virtual returns (bool);
 
-    /*
-     * @notice
-     *  Check wether a token address is part of rewards or not
-     * @param token, token address to check
-     * @return wether the provided token address is a reward for the strat or not
-     */
-    function _isReward(address token) internal view returns (bool) {
-        address[] memory _rewardTokens = rewardTokens;
-        for (uint256 i = 0; i < _rewardTokens.length; i++) {
-            if (_rewardTokens[i] == token) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /* @notice
      *  Used to change `keeper`.
      *  This may only be called by Vault Gov managment or current keeper.
@@ -827,7 +811,7 @@ abstract contract Tripod {
     * @return boolean repersenting true if the ratios are withen the range to not need to rebalance 
     */
     function isCloseEnough(uint256 ratio0, uint256 ratio1) public view returns(bool) {
-        if(ratio0 == 0 && ratio1 ==0) return true;
+        if(ratio0 == 0 && ratio1 == 0) return true;
 
         uint256 delta = ratio0 > ratio1 ? ratio0 - ratio1 : ratio1 - ratio0;
         //We use one lower decimal than our maxPercent loss. So if maxPercentLoss == .1 we wont rebalance withen .01
@@ -866,7 +850,7 @@ abstract contract Tripod {
         uint256[] memory _rewardsPending = pendingRewards();
         address[] memory _rewardTokens = rewardTokens;
         address reward;
-        for (uint256 i = 0; i < _rewardsPending.length; i++) {
+        for (uint256 i; i < _rewardsPending.length; ++i) {
             reward = _rewardTokens[i];
             if (reward == tokenA) {
                 _aBalance += _rewardsPending[i];
@@ -1256,7 +1240,7 @@ abstract contract Tripod {
         address _tokenB = tokenB;
         address _tokenC = tokenC;
         address[] memory _rewardTokens = rewardTokens;
-        for (uint256 i = 0; i < _rewardTokens.length; i++) {
+        for (uint256 i; i < _rewardTokens.length; ++i) {
             address reward = _rewardTokens[i];
             uint256 _rewardBal = IERC20(reward).balanceOf(address(this));
             // If the reward token is either A B or C, don't swap
@@ -1435,7 +1419,7 @@ abstract contract Tripod {
         address[] memory _rewardTokens = rewardTokens;
         uint256 length = _rewardTokens.length;
         uint256[] memory _balances = new uint256[](length);
-        for (uint8 i = 0; i < length; i++) {
+        for (uint8 i; i < length; ++i) {
             _balances[i] = IERC20(_rewardTokens[i]).balanceOf(address(this));
         }
         return _balances;

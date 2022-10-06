@@ -256,7 +256,7 @@ contract BalancerTripod is NoHedgeTripod {
         rewardTokens.push(auraToken);
         _checkAllowance(address(balancerVault), IERC20(auraToken), type(uint256).max);
 
-        for (uint256 i; i < rewardsContract.extraRewardsLength(); i++) {
+        for (uint256 i; i < rewardsContract.extraRewardsLength(); ++i) {
             address virtualRewardsPool = rewardsContract.extraRewards(i);
             address _rewardsToken =
                 IConvexRewards(virtualRewardsPool).rewardToken();
@@ -307,7 +307,7 @@ contract BalancerTripod is NoHedgeTripod {
         //Get the total tokens in the lp and the relative portion for each provider token
         uint256 total;
         (IERC20[] memory tokens, uint256[] memory balances, ) = balancerVault.getPoolTokens(poolId);
-        for(uint256 i; i < tokens.length; i++) {
+        for(uint256 i; i < tokens.length; ++i) {
             address token = address(tokens[i]);
    
             if(token == pool) continue;
@@ -374,7 +374,7 @@ contract BalancerTripod is NoHedgeTripod {
         //Need two trades for each provider token to create the LP
         //Each trade goes token -> bb-token -> mainPool
         PoolInfo memory _poolInfo;
-        for (uint256 i; i < 3; i ++) {
+        for (uint256 i; i < 3; ++i) {
             _poolInfo = poolInfo[i];
             address token = _poolInfo.token;
             uint256 balance = IERC20(token).balanceOf(address(this));
@@ -442,7 +442,7 @@ contract BalancerTripod is NoHedgeTripod {
         //Need seperate swaps for each provider token
         //Each swap goes mainPool -> bb-token -> token
         PoolInfo memory _poolInfo;
-        for (uint256 i; i < 3; i ++) {
+        for (uint256 i; i < 3; ++i) {
             _poolInfo = poolInfo[i];
             uint256 weightedToBurn = _amount * investedWeight[_poolInfo.token] / RATIO_PRECISION;
             uint256 j = i * 2;
@@ -674,7 +674,7 @@ contract BalancerTripod is NoHedgeTripod {
     function setBalancerPoolInfos() internal {
         (IERC20[] memory _tokens, , ) = balancerVault.getPoolTokens(poolId);
         PoolInfo memory _poolInfo;
-        for(uint256 i; i < _tokens.length; i ++) {
+        for(uint256 i; i < _tokens.length; ++i) {
             IBalancerPool _pool = IBalancerPool(address(_tokens[i]));
             
             //We cant call getMainToken on the main pool
@@ -973,7 +973,7 @@ contract BalancerTripod is NoHedgeTripod {
         address[] memory _rewardTokens = rewardTokens;
         ITradeFactory tf = ITradeFactory(_tradeFactory);
         //We only need to set trade factory for non aura/bal tokens
-        for(uint256 i = 2; i < _rewardTokens.length; i ++) {
+        for(uint256 i = 2; i < _rewardTokens.length; ++i) {
             address token = rewardTokens[i];
         
             IERC20(token).safeApprove(_tradeFactory, type(uint256).max);
@@ -989,7 +989,7 @@ contract BalancerTripod is NoHedgeTripod {
 
     function _removeTradeFactoryPermissions() internal {
         address[] memory _rewardTokens = rewardTokens;
-        for(uint256 i = 2; i < _rewardTokens.length; i ++) {
+        for(uint256 i = 2; i < _rewardTokens.length; ++i) {
         
             IERC20(_rewardTokens[i]).safeApprove(tradeFactory, 0);
         }
