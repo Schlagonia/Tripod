@@ -1470,8 +1470,7 @@ abstract contract Tripod {
         uint256 _a = balanceOfA();
         uint256 _b = balanceOfB();
         uint256 _c = balanceOfC();
-        _closePosition();
-        rebalance();
+        _closeAllPositions();
         require(expectedBalanceA <= balanceOfA() - _a, "!sandwiched");
         require(expectedBalanceB <= balanceOfB() - _b, "!sandwiched");
         require(expectedBalanceC <= balanceOfC() - _c, "!sandwiched");

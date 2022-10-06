@@ -156,15 +156,11 @@ contract BalancerTripod is NoHedgeTripod {
         //This will update them based on current rewards on Aura
         _updateRewardTokens();
 
-        //Set array of pool Infos's for each token
-        poolInfo[0] = getBalancerPoolInfo(tokenA);
-        poolInfo[1] = getBalancerPoolInfo(tokenB);
-        poolInfo[2] = getBalancerPoolInfo(tokenC);
+        //Set array and mapping of pool Infos's for each token
+        setBalancerPoolInfos();
 
         //Set mapping of curve index's
-        curveIndex[tokenA] = _getCRVPoolIndex(tokenA);
-        curveIndex[tokenB] = _getCRVPoolIndex(tokenB);
-        curveIndex[tokenC] = _getCRVPoolIndex(tokenC);
+        setCRVPoolIndexs();
 
         maxApprove(tokenA, address(balancerVault));
         maxApprove(tokenB, address(balancerVault));
@@ -671,52 +667,52 @@ contract BalancerTripod is NoHedgeTripod {
 
     /*
     * @internal
-    *   Function used internally to get the info of a bb-pool based on the address of a provider token
-    *   Will also set the poolInfoMapping for the injected token
-    * @param _token, The address of providers want
-    * @return PoolInfo struct for the provider token
+    *   Function used internally to set all of a bb-pool info for each provider token
+    *   Will set the poolInfoMapping based on the underlying token
+    *   Will set the poolInfo array in order of A, B, C for createLP() accounting
     */
-    function getBalancerPoolInfo(address _token) internal returns (PoolInfo memory _poolInfo) {
+    function setBalancerPoolInfos() internal {
         (IERC20[] memory _tokens, , ) = balancerVault.getPoolTokens(poolId);
+        PoolInfo memory _poolInfo;
         for(uint256 i; i < _tokens.length; i ++) {
             IBalancerPool _pool = IBalancerPool(address(_tokens[i]));
             
             //We cant call getMainToken on the main pool
             if(pool == address(_pool)) continue;
             
-            if(_token == _pool.getMainToken()) {
-                _poolInfo = PoolInfo(
+            address _token = _pool.getMainToken();
+            _poolInfo = PoolInfo(
                     _token,
                     address(_pool),
                     _pool.getPoolId()
                 );
-                poolInfoMapping[_token] = _poolInfo;
-                return _poolInfo;
+            poolInfoMapping[_token] = _poolInfo;
+
+            if(_token == tokenA) {
+                poolInfo[0] = _poolInfo;
+            } else if(_token == tokenB) {
+                poolInfo[1] = _poolInfo;
+            } else if(_token == tokenC) {
+                poolInfo[2] = _poolInfo;
+            } else {
+                revert("!token in pool");
             }
         }
-
-        //If we get here we do not have the correct pool
-        revert("No pool index");
     }
 
     /*
      * @notice
-     *  Function used internally to retrieve the CRV index for a token in a CRV pool
-     * @return the token's pool index
+     *  Function used internally to set the index for each token in the 3Pool
      */
-    function _getCRVPoolIndex(address _token) internal view returns(int128) {
+    function setCRVPoolIndexs() internal {
         uint256 i = 0; 
         int128 poolIndex = 0;
         while (i < 3) {
-            if (curvePool.coins(i) == _token) {
-                return poolIndex;
-            }
+            address _token = curvePool.coins(i);
+            curveIndex[_token] = poolIndex;
             i++;
             poolIndex++;
         }
-
-        //If we get here we do not have the correct pool
-        revert("No pool index");
     }
 
     /*
