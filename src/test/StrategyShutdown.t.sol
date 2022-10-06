@@ -58,7 +58,7 @@ contract StrategyShutdownTest is StrategyFixture {
 
     function testBasicShutdown(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
 
         // Earn interest
         skip(2 days);
@@ -83,13 +83,11 @@ contract StrategyShutdownTest is StrategyFixture {
         vm.prank(strategist);
         _provider.setEmergencyExit();
 
-        uint256 preBalance = _provider.estimatedTotalAssets();
-
         vm.prank(strategist);
         _provider.harvest(); // Remove funds from strategy
 
         assertEq(_want.balanceOf(address(_provider)), 0);
-        assertGe(_want.balanceOf(address(_vault)), preBalance); // The vault has all funds
+        assertGe(_want.balanceOf(address(_vault)), deposited[index]); // The vault has all funds
     }
 
     function testDontInvestWant(uint256 _amount) public {

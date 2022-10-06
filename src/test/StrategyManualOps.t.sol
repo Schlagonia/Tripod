@@ -48,12 +48,13 @@ contract ManualOpsTest is StrategyFixture {
 
         uint256 lpBalance = tripod.totalLpBalance(); 
         //(uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
-        vm.prank(gov);
+        vm.startPrank(gov);
         tripod.removeLiquidityManually(
             tripod.invested(tripod.tokenA()) * 9_800 / 10_000,
             tripod.invested(tripod.tokenB()) * 9_800 / 10_000,
             tripod.invested(tripod.tokenC()) * 9_800 / 10_000
         );
+        vm.stopPrank();
 
         assertEq(tripod.balanceOfPool(), 0, "balance of pool off");
         assertEq(tripod.balanceOfStake(), 0);

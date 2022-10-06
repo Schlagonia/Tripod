@@ -4,12 +4,12 @@ pragma experimental ABIEncoderV2;
 
 /// @title Tripod Math
 /// @notice Contains the Rebalancing Math for the Tripod. Used during both the rebalance and quote rebalance functions
-contract TripodMath {
+library TripodMath {
 
     /*
     * @notice
     *   The rebalancing math aims to have each tokens relative return be equal after the rebalance irregardless of the strating weights or exchange rates
-    *   These function are colled either during swapOneToTwo() or swapTwoToOne() in the Tripod.sol https://github.com/Schlagonia/Tripod/blob/master/src/Tripod.sol
+    *   These function are called during swapOneToTwo() or swapTwoToOne() in the Tripod.sol https://github.com/Schlagonia/Tripod/blob/master/src/Tripod.sol
     *   All math was adopted from the original joint strategies https://github.com/fp-crypto/joint-strategy
 
         All equations will use the following variables:
@@ -109,23 +109,20 @@ contract TripodMath {
     */
     function getN(RebalanceInfo memory info, uint256 p) internal pure returns(uint256) {
         /*
-        *               (a0*b1) - (a1*b0) 
-        *    n = -1 * -------------------- 
-        *                b0 + eOfB*a0*P
+        *          (a1*b0) - (a0*b1)  
+        *    n = -------------------- 
+        *           b0 + eOfB*a0*P
         */
         unchecked{
-            int256 numerator = 
-                (int256(info.a0) * int256(info.b1)) - 
-                        (int256(info.a1) * int256(info.b0));
+            uint256 numerator = 
+                (info.a1 * info.b0) -
+                    (info.a0 * info.b1);
 
-            int256 denominator = (
-                (int256(info.b0) * 1e18) + 
-                    ((int256(info.eOfB) * int256(info.a0) / int256(info.precision)) * int256(p))
-            );
+            uint256 denominator = 
+                (info.b0 * 1e18) + 
+                    (info.eOfB * info.a0 / info.precision * p);
 
-            int256 n = -1 * (numerator * 1e18 / denominator);
-
-            return(uint256(n));
+            return numerator * 1e18 / denominator;
         }
     }
 

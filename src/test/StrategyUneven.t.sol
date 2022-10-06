@@ -62,6 +62,8 @@ contract StrategyUnevenTest is StrategyFixture {
         assertEq(tripod.invested(address(assetFixtures[2].want)), deposited[2]);
 
         skip(1 days);
+        deal(cvx, address(tripod), _amount/100);
+        deal(crv, address(tripod), _amount/100);
 
         vm.prank(gov);
         tripod.setDontInvestWant(true);
@@ -91,6 +93,8 @@ contract StrategyUnevenTest is StrategyFixture {
         }
 
         skip(1 days);
+        deal(cvx, address(tripod), _amount/100);
+        deal(crv, address(tripod), _amount/100);
         vm.prank(keeper);
         tripod.harvest();
 
