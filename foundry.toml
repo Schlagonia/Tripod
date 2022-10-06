@@ -8,5 +8,5 @@ remappings = [
     '@openzeppelin/=lib/openzeppelin-contracts/',
     "@uniswap/=lib/v3-core/"
 ]
-
+fs_permissions = [{ access = "read", path = "./artifacts"}]
 # See more config options https://github.com/gakonst/foundry/tree/master/config
