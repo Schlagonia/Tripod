@@ -472,7 +472,7 @@ abstract contract Tripod {
         invested[tokenC] = amountC;
 
         (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
-            getWeights(invested[tokenA], invested[tokenB], invested[tokenC]);
+            TripodMath.getWeights(getOraclePrice(tokenA, invested[tokenA]), getOraclePrice(tokenB, invested[tokenB]), getOraclePrice(tokenC, invested[tokenC]));
 
         // Deposit LPs (if any)
         depositLP();
@@ -770,9 +770,9 @@ abstract contract Tripod {
 
         // Add remaining balance in tripod (if any)
         unchecked{
-            _aBalance += balanceOfA();// + aProfit;
-            _bBalance += balanceOfB();// + bProfit;
-            _cBalance += balanceOfC();// + cProfit;
+            _aBalance += balanceOfA();
+            _bBalance += balanceOfB();
+            _cBalance += balanceOfC();
         }
 
         // Include rewards (swapping them if not tokenA or tokenB)
@@ -1054,33 +1054,6 @@ abstract contract Tripod {
     }
 
     /*
-    * @notice 
-    *   Internal function called when a new position has been opened to store the relative weights of each token invested
-    *   uses the most recent oracle price to get the dollar value of the amount invested. This is so the rebalance function
-    *   can work with different dollar amounts invested upon lp creation
-    * @param investedA, the amount of tokenA that was invested
-    * @param investedB, the amount of tokenB that was invested
-    * @param investedC, the amoun of tokenC that was invested
-    * @return, the relative weight for each token expressed as 1e18
-    */
-    function getWeights(
-        uint256 investedA,
-        uint256 investedB,
-        uint256 investedC
-    ) internal view returns (uint256 wA, uint256 wB, uint256 wC) {
-        unchecked {
-            uint256 adjustedA = getOraclePrice(tokenA, investedA);
-            uint256 adjustedB = getOraclePrice(tokenB, investedB);
-            uint256 adjustedC = getOraclePrice(tokenC, investedC);
-            uint256 total = adjustedA + adjustedB + adjustedC; 
-                        
-            wA = adjustedA * RATIO_PRECISION / total;
-            wB = adjustedB * RATIO_PRECISION / total;
-            wC = adjustedC * RATIO_PRECISION / total;
-        }
-    }
-
-    /*
     * @notice
     *   Returns the oracle adjusted price for a specific token and amount expressed in the oracle terms of 1e8
     *   This uses the chainlink feed Registry and returns in terms of the USD
@@ -1099,9 +1072,7 @@ abstract contract Tripod {
                 address(0x0000000000000000000000000000000000000348) // USD
             );
 
-        require(price > 0);
-        require(updateTime != 0);
-        require(answeredInRound >= roundId);
+        require(price > 0 && updateTime != 0 && answeredInRound >= roundId);
         //return the dollar amount to 1e8
         return uint256(price) * _amount / (10 ** IERC20Extended(_token).decimals());
     }
@@ -1134,9 +1105,9 @@ abstract contract Tripod {
         uint256 minCOut
     ) internal virtual {
         burnLP(_amount);
-        require(minAOut <= balanceOfA(), "min");
-        require(minBOut <= balanceOfB(), "min");
-        require(minCOut <= balanceOfC(), "min");
+        require(minAOut <= balanceOfA() &&
+                    minBOut <= balanceOfB() &&
+                        minCOut <= balanceOfC(), "min");
     }
 
     function getReward() internal virtual;
@@ -1312,9 +1283,9 @@ abstract contract Tripod {
         uint256 _b = balanceOfB();
         uint256 _c = balanceOfC();
         _closeAllPositions();
-        require(expectedBalanceA <= balanceOfA() - _a, "min");
-        require(expectedBalanceB <= balanceOfB() - _b, "min");
-        require(expectedBalanceC <= balanceOfC() - _c, "min");
+        require(expectedBalanceA <= balanceOfA() - _a &&
+                    expectedBalanceB <= balanceOfB() - _b &&
+                        expectedBalanceC <= balanceOfC() - _c, "min");
         // reset invested balances or we wont be able to open up a position again
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
         investedWeight[tokenA] = investedWeight[tokenB] = investedWeight[tokenC] = 0;
@@ -1382,9 +1353,7 @@ abstract contract Tripod {
      * @param _token, address of the token to sweep
      */
     function sweep(address _token) external onlyGovernance {
-        require(_token != tokenA);
-        require(_token != tokenB);
-        require(_token != tokenC);
+        require(_token != tokenA && _token != tokenB && _token != tokenC);
 
         SafeERC20.safeTransfer(
             IERC20(_token),

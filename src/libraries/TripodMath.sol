@@ -55,6 +55,7 @@ library TripodMath {
         uint256 precisionC;
     }   
     
+    uint256 private constant RATIO_PRECISION = 1e18;
     /*
     * @notice
     *   Internal function to be called during swapOneToTwo to return n: the amount of a to sell and p: the % of n to sell to b
@@ -161,6 +162,30 @@ library TripodMath {
 
             nb = numeratorB / denominator;
             nc = numeratorC / denominator;
+        }
+    }
+
+    /*
+    * @notice 
+    *   Internal function called when a new position has been opened to store the relative weights of each token invested
+    *   uses the most recent oracle price to get the dollar value of the amount invested. This is so the rebalance function
+    *   can work with different dollar amounts invested upon lp creation
+    * @param investedA, the amount of tokenA that was invested
+    * @param investedB, the amount of tokenB that was invested
+    * @param investedC, the amoun of tokenC that was invested
+    * @return, the relative weight for each token expressed as 1e18
+    */
+    function getWeights(
+        uint256 adjustedA,
+        uint256 adjustedB,
+        uint256 adjustedC
+    ) internal pure returns (uint256 wA, uint256 wB, uint256 wC) {
+        unchecked {
+            uint256 total = adjustedA + adjustedB + adjustedC; 
+                        
+            wA = adjustedA * RATIO_PRECISION / total;
+            wB = adjustedB * RATIO_PRECISION / total;
+            wC = adjustedC * RATIO_PRECISION / total;
         }
     }
 }

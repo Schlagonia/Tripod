@@ -168,10 +168,10 @@ contract ManualOpsTest is StrategyFixture {
 
         vm.prank(address(666));
         vm.expectRevert(bytes("auth"));
-        tripod.changeToSwapTo();
+        tripod.changeToSwapTo(1);
 
         vm.prank(management);
-        tripod.changeToSwapTo();
+        tripod.changeToSwapTo(1);
 
         IERC20 token = IERC20(tokenAddrs["DAI"]);
         uint256 before = token.balanceOf(address(tripod));

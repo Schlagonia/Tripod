@@ -599,6 +599,7 @@ library TripodMath {
         uint256 precisionC;
     }   
     
+    uint256 private constant RATIO_PRECISION = 1e18;
     /*
     * @notice
     *   Internal function to be called during swapOneToTwo to return n: the amount of a to sell and p: the % of n to sell to b
@@ -705,6 +706,30 @@ library TripodMath {
 
             nb = numeratorB / denominator;
             nc = numeratorC / denominator;
+        }
+    }
+
+    /*
+    * @notice 
+    *   Internal function called when a new position has been opened to store the relative weights of each token invested
+    *   uses the most recent oracle price to get the dollar value of the amount invested. This is so the rebalance function
+    *   can work with different dollar amounts invested upon lp creation
+    * @param investedA, the amount of tokenA that was invested
+    * @param investedB, the amount of tokenB that was invested
+    * @param investedC, the amoun of tokenC that was invested
+    * @return, the relative weight for each token expressed as 1e18
+    */
+    function getWeights(
+        uint256 adjustedA,
+        uint256 adjustedB,
+        uint256 adjustedC
+    ) internal pure returns (uint256 wA, uint256 wB, uint256 wC) {
+        unchecked {
+            uint256 total = adjustedA + adjustedB + adjustedC; 
+                        
+            wA = adjustedA * RATIO_PRECISION / total;
+            wB = adjustedB * RATIO_PRECISION / total;
+            wC = adjustedC * RATIO_PRECISION / total;
         }
     }
 }
@@ -1273,7 +1298,7 @@ abstract contract Tripod {
         invested[tokenC] = amountC;
 
         (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
-            getWeights(invested[tokenA], invested[tokenB], invested[tokenC]);
+            TripodMath.getWeights(getOraclePrice(tokenA, invested[tokenA]), getOraclePrice(tokenB, invested[tokenB]), getOraclePrice(tokenC, invested[tokenC]));
 
         // Deposit LPs (if any)
         depositLP();
@@ -1571,9 +1596,9 @@ abstract contract Tripod {
 
         // Add remaining balance in tripod (if any)
         unchecked{
-            _aBalance += balanceOfA();// + aProfit;
-            _bBalance += balanceOfB();// + bProfit;
-            _cBalance += balanceOfC();// + cProfit;
+            _aBalance += balanceOfA();
+            _bBalance += balanceOfB();
+            _cBalance += balanceOfC();
         }
 
         // Include rewards (swapping them if not tokenA or tokenB)
@@ -1855,33 +1880,6 @@ abstract contract Tripod {
     }
 
     /*
-    * @notice 
-    *   Internal function called when a new position has been opened to store the relative weights of each token invested
-    *   uses the most recent oracle price to get the dollar value of the amount invested. This is so the rebalance function
-    *   can work with different dollar amounts invested upon lp creation
-    * @param investedA, the amount of tokenA that was invested
-    * @param investedB, the amount of tokenB that was invested
-    * @param investedC, the amoun of tokenC that was invested
-    * @return, the relative weight for each token expressed as 1e18
-    */
-    function getWeights(
-        uint256 investedA,
-        uint256 investedB,
-        uint256 investedC
-    ) internal view returns (uint256 wA, uint256 wB, uint256 wC) {
-        unchecked {
-            uint256 adjustedA = getOraclePrice(tokenA, investedA);
-            uint256 adjustedB = getOraclePrice(tokenB, investedB);
-            uint256 adjustedC = getOraclePrice(tokenC, investedC);
-            uint256 total = adjustedA + adjustedB + adjustedC; 
-                        
-            wA = adjustedA * RATIO_PRECISION / total;
-            wB = adjustedB * RATIO_PRECISION / total;
-            wC = adjustedC * RATIO_PRECISION / total;
-        }
-    }
-
-    /*
     * @notice
     *   Returns the oracle adjusted price for a specific token and amount expressed in the oracle terms of 1e8
     *   This uses the chainlink feed Registry and returns in terms of the USD
@@ -1900,9 +1898,7 @@ abstract contract Tripod {
                 address(0x0000000000000000000000000000000000000348) // USD
             );
 
-        require(price > 0);
-        require(updateTime != 0);
-        require(answeredInRound >= roundId);
+        require(price > 0 && updateTime != 0 && answeredInRound >= roundId);
         //return the dollar amount to 1e8
         return uint256(price) * _amount / (10 ** IERC20Extended(_token).decimals());
     }
@@ -1935,9 +1931,9 @@ abstract contract Tripod {
         uint256 minCOut
     ) internal virtual {
         burnLP(_amount);
-        require(minAOut <= balanceOfA(), "min");
-        require(minBOut <= balanceOfB(), "min");
-        require(minCOut <= balanceOfC(), "min");
+        require(minAOut <= balanceOfA() &&
+                    minBOut <= balanceOfB() &&
+                        minCOut <= balanceOfC(), "min");
     }
 
     function getReward() internal virtual;
@@ -2113,9 +2109,9 @@ abstract contract Tripod {
         uint256 _b = balanceOfB();
         uint256 _c = balanceOfC();
         _closeAllPositions();
-        require(expectedBalanceA <= balanceOfA() - _a, "min");
-        require(expectedBalanceB <= balanceOfB() - _b, "min");
-        require(expectedBalanceC <= balanceOfC() - _c, "min");
+        require(expectedBalanceA <= balanceOfA() - _a &&
+                    expectedBalanceB <= balanceOfB() - _b &&
+                        expectedBalanceC <= balanceOfC() - _c, "min");
         // reset invested balances or we wont be able to open up a position again
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
         investedWeight[tokenA] = investedWeight[tokenB] = investedWeight[tokenC] = 0;
@@ -2183,9 +2179,7 @@ abstract contract Tripod {
      * @param _token, address of the token to sweep
      */
     function sweep(address _token) external onlyGovernance {
-        require(_token != tokenA);
-        require(_token != tokenB);
-        require(_token != tokenC);
+        require(_token != tokenA && _token != tokenB && _token != tokenC);
 
         SafeERC20.safeTransfer(
             IERC20(_token),
@@ -2621,6 +2615,7 @@ library SafeCast {
     }
 }
 
+//import {BalancerLP} from "../libraries/BalancerLP.sol";
 
 contract BalancerTripod is Tripod {
     using SafeERC20 for IERC20;
@@ -2633,8 +2628,6 @@ contract BalancerTripod is Tripod {
     //Used for swaps. We default to swap rewards to usdc
     address internal constant usdcAddress =
         0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    address internal constant daiAddress =
-        0x6B175474E89094C44Da98b954EedeAC495271d0F;
     //address of the trade factory to be used for extra rewards
     address public tradeFactory;
 
@@ -2657,7 +2650,7 @@ contract BalancerTripod is Tripod {
     //Array of all 3 provider tokens structs
     PoolInfo[3] internal poolInfo;
     //Mapping of provider token to PoolInfo struct
-    mapping(address => PoolInfo) internal poolInfoMapping;
+    //mapping(address => PoolInfo) internal poolInfoMapping;
     
     //The main Balancer vault
     IBalancerVault internal constant balancerVault = 
@@ -2673,8 +2666,8 @@ contract BalancerTripod is Tripod {
         bytes32(0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a);
     //The pool Id for the pool we will swap eth through to a provider token
     bytes32 internal toSwapToPoolId;
-    //Address of the token we are currently swapping to from eth
-    address public toSwapTo;
+    //Index of the token we are currently swapping to from eth
+    uint256 public toSwapToIndex;
     //The main Balancer Pool Id
     bytes32 internal poolId;
 
@@ -2754,20 +2747,20 @@ contract BalancerTripod is Tripod {
 
         //Main balancer PoolId
         poolId = IBalancerPool(pool).getPoolId();
-        //Default to use usdc for the token to swap to
-        toSwapTo = usdcAddress;
-        //Default to usdcEth pool ID
-        toSwapToPoolId = ethUsdcPoolId;
 
-        // The reward tokens are the tokens provided to the pool
-        //This will update them based on current rewards on Aura
-        _updateRewardTokens();
+        //Default to usdcEth pool ID.
+        //If USDC was not set as Token A we will need to set the index after deployment
+        toSwapToPoolId = ethUsdcPoolId;
 
         //Set array and mapping of pool Infos's for each token
         setBalancerPoolInfos();
 
         //Set mapping of curve index's
         setCRVPoolIndexs();
+
+        // The reward tokens are the tokens provided to the pool
+        //This will update them based on current rewards on Aura
+        _updateRewardTokens();
 
         maxApprove(tokenA, address(balancerVault));
         maxApprove(tokenB, address(balancerVault));
@@ -2872,7 +2865,7 @@ contract BalancerTripod is Tripod {
             //We will use the trade factory for any extra rewards
             if(tradeFactory != address(0)) {
                 _checkAllowance(tradeFactory, IERC20(_rewardsToken), type(uint256).max);
-                ITradeFactory(tradeFactory).enable(_rewardsToken, toSwapTo);
+                ITradeFactory(tradeFactory).enable(_rewardsToken, poolInfo[toSwapToIndex].token);
             }
         }
     }
@@ -2920,11 +2913,11 @@ contract BalancerTripod is Tripod {
             if(token == pool) continue;
             uint256 balance = balances[i];
      
-            if(token == poolInfoMapping[tokenA].bbPool) {
+            if(token == poolInfo[0].bbPool) {
                 _balanceA = balance;
-            } else if(token == poolInfoMapping[tokenB].bbPool) {
+            } else if(token == poolInfo[1].bbPool) {
                 _balanceB = balance;
-            } else if(token == poolInfoMapping[tokenC].bbPool){
+            } else if(token == poolInfo[2].bbPool){
                 _balanceC = balance;
             }
 
@@ -3254,7 +3247,7 @@ contract BalancerTripod is Tripod {
         assets[0] = IAsset(balToken);
         assets[1] = IAsset(auraToken);
         assets[2] = IAsset(referenceToken);
-        assets[3] = IAsset(toSwapTo);
+        assets[3] = IAsset(poolInfo[toSwapToIndex].token);
         
         //Only min we need to set is for the balances going in, match with their index
         int[] memory limits = new int[](4);
@@ -3292,7 +3285,7 @@ contract BalancerTripod is Tripod {
                     address(_pool),
                     _pool.getPoolId()
                 );
-            poolInfoMapping[_token] = _poolInfo;
+            //poolInfoMapping[_token] = _poolInfo;
 
             if(_token == tokenA) {
                 poolInfo[0] = _poolInfo;
@@ -3395,8 +3388,7 @@ contract BalancerTripod is Tripod {
         uint256 minOutAmount,
         bool core
     ) external override onlyVaultManagers returns (uint256) {
-        require(swapInAmount > 0);
-        require(IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "!amount");
+        require(swapInAmount > 0 && IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "!amount");
         
         if(core) {
             return swap(
@@ -3421,15 +3413,16 @@ contract BalancerTripod is Tripod {
     *   Will only use toSwapTo since that is what is swapped to during tend
     */
     function createTendLP() internal {
+
         IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](2);
-    
+        
         IAsset[] memory assets = new IAsset[](3);
         int[] memory limits = new int[](3);
 
-        address _toSwapTo = toSwapTo;
-        uint256 balance = IERC20(_toSwapTo).balanceOf(address(this));
-        PoolInfo memory _poolInfo = poolInfoMapping[_toSwapTo];
-
+        //address _toSwapTo = toSwapTo;
+        PoolInfo memory _poolInfo = poolInfo[toSwapToIndex];
+        uint256 balance = IERC20(_poolInfo.token).balanceOf(address(this));
+        
         swaps[0] = IBalancerVault.BatchSwapStep(
             _poolInfo.poolId,
             0,  //Index to use for toSwapTo
@@ -3447,12 +3440,13 @@ contract BalancerTripod is Tripod {
         );
 
         //Match the address with the index we used above
-        assets[0] = IAsset(_toSwapTo);
+        assets[0] = IAsset(poolInfo[toSwapToIndex].token);
         assets[1] = IAsset(_poolInfo.bbPool);
         assets[2] = IAsset(pool);
 
         //Only need to set the toSwapTo balance goin in
         limits[0] = int(balance);
+        
         
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
@@ -3532,19 +3526,15 @@ contract BalancerTripod is Tripod {
     *   Function available to management to change which token we swap to from rewards
     *   will only be usdc or DAI
     */
-    function changeToSwapTo() external onlyVaultManagers {
+    function changeToSwapTo(uint256 newIndex) external onlyVaultManagers {
 
-        if(toSwapTo == usdcAddress) {
-            toSwapToPoolId = ethDaiPoolId;
-            toSwapTo = daiAddress;
-        } else {
+        if(poolInfo[newIndex].token == usdcAddress) {
             toSwapToPoolId = ethUsdcPoolId;
-            toSwapTo = usdcAddress;
+        } else {
+            toSwapToPoolId = ethDaiPoolId;
+            
         }
-    }
-
-    function maxApprove(address _token, address _contract) internal {
-        IERC20(_token).safeApprove(_contract, type(uint256).max);
+        toSwapToIndex = newIndex;
     }
 
     function getFundManagement() 
@@ -3558,6 +3548,10 @@ contract BalancerTripod is Tripod {
                 payable(address(this)),
                 false
             );
+    }
+
+    function maxApprove(address _token, address _contract) internal {
+        IERC20(_token).safeApprove(_contract, type(uint256).max);
     }
 
     // ---------------------- YSWAPS FUNCTIONS ----------------------
@@ -3574,7 +3568,7 @@ contract BalancerTripod is Tripod {
         
             IERC20(token).safeApprove(_tradeFactory, type(uint256).max);
 
-            tf.enable(token, toSwapTo);
+            tf.enable(token, poolInfo[toSwapToIndex].token);
         }
         tradeFactory = _tradeFactory;
     }
