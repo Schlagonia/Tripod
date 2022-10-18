@@ -4,7 +4,8 @@ pragma experimental ABIEncoderV2;
 
 // Import necessary libraries and interfaces:
 // NoHedgetripod to inherit from
-import "../Hedges/NoHedgeTripod.sol";
+//import "../Hedges/NoHedgeTripod.sol";
+import "../Tripod.sol";
 import { IBalancerVault } from "../interfaces/Balancer/IBalancerVault.sol";
 import { IBalancerPool } from "../interfaces/Balancer/IBalancerPool.sol";
 import { IAsset } from "../interfaces/Balancer/IAsset.sol";
@@ -15,7 +16,7 @@ import {ITradeFactory} from "../interfaces/ySwaps/ITradeFactory.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
-contract BalancerTripod is NoHedgeTripod {
+contract BalancerTripod is Tripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using SafeCast for int256;
@@ -107,7 +108,7 @@ contract BalancerTripod is NoHedgeTripod {
         address _referenceToken,
         address _pool,
         address _rewardsContract
-    ) NoHedgeTripod(_providerA, _providerB, _providerC, _referenceToken, _pool) {
+    ) Tripod(_providerA, _providerB, _providerC, _referenceToken, _pool) {
         _initializeBalancerTripod(_rewardsContract);
     }
 
@@ -194,7 +195,7 @@ contract BalancerTripod is NoHedgeTripod {
         address _pool,
         address _rewardsContract
     ) external returns (address newTripod) {
-        require(isOriginal, "!original");
+        require(isOriginal);
         bytes20 addressBytes = bytes20(address(this));
 
         assembly {
@@ -528,8 +529,8 @@ contract BalancerTripod is NoHedgeTripod {
             return 0;
         }
 
-        require(_tokenTo == tokenA || _tokenTo == tokenB || _tokenTo == tokenC, "must be valid _to"); 
-        require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC, "must be valid _from");
+        require(_tokenTo == tokenA || _tokenTo == tokenB || _tokenTo == tokenC); 
+        require(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC);
         uint256 prevBalance = IERC20(_tokenTo).balanceOf(address(this));
 
         // Perform swap through curve since thats what rebalance quote are off of
@@ -541,7 +542,7 @@ contract BalancerTripod is NoHedgeTripod {
         );
 
         uint256 diff = IERC20(_tokenTo).balanceOf(address(this)) - prevBalance;
-        require(diff >= _minOutAmount, "!out");
+        require(diff >= _minOutAmount);
         return diff;
     }
 
@@ -568,8 +569,7 @@ contract BalancerTripod is NoHedgeTripod {
 
         require(_tokenTo == tokenA || 
                     _tokenTo == tokenB || 
-                        _tokenTo == tokenC, 
-                            "must be valid token"); 
+                        _tokenTo == tokenC); 
 
         if(_tokenFrom == balToken) {
             (, int256 balPrice,,,) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
@@ -694,9 +694,7 @@ contract BalancerTripod is NoHedgeTripod {
                 poolInfo[1] = _poolInfo;
             } else if(_token == tokenC) {
                 poolInfo[2] = _poolInfo;
-            } else {
-                revert("!token in pool");
-            }
+            } 
         }
     }
 
@@ -724,6 +722,7 @@ contract BalancerTripod is NoHedgeTripod {
         uint256 _amountIn, 
         uint256 _minOut
     ) internal override returns (uint256) {
+        /*
         IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](2);
         uint256 balBefore = IERC20(toSwapTo).balanceOf(address(this));
 
@@ -766,8 +765,9 @@ contract BalancerTripod is NoHedgeTripod {
         );
 
         uint256 diff = IERC20(toSwapTo).balanceOf(address(this)) - balBefore;
-        require(diff >= _minOut, "!minOut");
+        require(diff >= _minOut);
         return diff;
+        */
     }
 
     /*
@@ -789,8 +789,8 @@ contract BalancerTripod is NoHedgeTripod {
         uint256 minOutAmount,
         bool core
     ) external override onlyVaultManagers returns (uint256) {
-        require(swapInAmount > 0, "cant swap 0");
-        require(IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "Not enough tokens");
+        require(swapInAmount > 0);
+        require(IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "!amount");
         
         if(core) {
             return swap(
@@ -808,16 +808,6 @@ contract BalancerTripod is NoHedgeTripod {
                 );
         }
     }
-
-    /*
-     * @notice
-     *  Function used by harvest trigger to assess whether to harvest it as
-     * the tripod may have gone out of bounds. If debt ratio is kept in the vaults, the tripod
-     * re-centers, if debt ratio is 0, the tripod is simpley closed and funds are sent back
-     * to each provider
-     * @return bool assessing whether to end the epoch or not
-     */
-    function shouldEndEpoch() public view override returns (bool) {}
 
     /*
     * @notice

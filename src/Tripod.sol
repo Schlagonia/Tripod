@@ -172,40 +172,33 @@ abstract contract Tripod {
     uint256 public maxEpochTime;
 
     // Modifiers needed for access control normally inherited from BaseStrategy 
-    modifier onlyGovernance() {
-        checkGovernance();
-        _;
-    }
-
-    modifier onlyVaultManagers() {
-        checkVaultManagers();
-        _;
-    }
-
-    modifier onlyProviders() {
-        checkProvider();
-        _;
-    }
-
-    modifier onlyKeepers() {
-        checkKeepers();
-        _;
-    }
-
-    function checkKeepers() internal view {
-        require(isKeeper() || isGovernance() || isVaultManager(), "!authorized");
-    }
-
-    function checkGovernance() internal view {
-        require(isGovernance(), "!authorized");
-    }
-
-    function checkVaultManagers() internal view {
-        require(isGovernance() || isVaultManager(), "!authorized");
-    }
-
-    function checkProvider() internal view {
-        require(isProvider(), "!authorized");
+    modifier onlyGovernance() {	
+        checkGovernance();	
+        _;	
+    }	
+    modifier onlyVaultManagers() {	
+        checkVaultManagers();	
+        _;	
+    }	
+    modifier onlyProviders() {	
+        checkProvider();	
+        _;	
+    }	
+    modifier onlyKeepers() {	
+        checkKeepers();	
+        _;	
+    }	
+    function checkKeepers() internal view {	
+        require(isKeeper() || isGovernance() || isVaultManager(), "auth");	
+    }	
+    function checkGovernance() internal view {	
+        require(isGovernance(), "auth");	
+    }	
+    function checkVaultManagers() internal view {	
+        require(isGovernance() || isVaultManager(), "auth");	
+    }	
+    function checkProvider() internal view {	
+        require(isProvider(), "auth");	
     }
 
     function isGovernance() internal view returns (bool) {
@@ -268,7 +261,7 @@ abstract contract Tripod {
         address _referenceToken,
         address _pool
     ) internal virtual {
-        require(address(providerA) == address(0), "tripod already initialized");
+        require(address(providerA) == address(0));
         providerA = ProviderStrategy(_providerA);
         providerB = ProviderStrategy(_providerB);
         providerC = ProviderStrategy(_providerC);
@@ -284,7 +277,7 @@ abstract contract Tripod {
         tokenA = address(providerA.want());
         tokenB = address(providerB.want());
         tokenC = address(providerC.want());
-        require(tokenA != tokenB && tokenB != tokenC && tokenA != tokenC, "!same-want");
+        require(tokenA != tokenB && tokenB != tokenC && tokenA != tokenC);
 
         //Approve providers so they can pull during harvests
         IERC20(tokenA).safeApprove(_providerA, type(uint256).max);
@@ -301,9 +294,9 @@ abstract contract Tripod {
 
     function name() external view virtual returns (string memory);
 
-    function shouldEndEpoch() public view virtual returns (bool);
+    //function shouldEndEpoch() public view virtual returns (bool);
 
-    function _autoProtect() internal view virtual returns (bool);
+    //function _autoProtect() internal view virtual returns (bool);
 
     /* @notice
      *  Used to change `keeper`.
@@ -318,87 +311,33 @@ abstract contract Tripod {
     }
 
     /*
-     * @notice
-     *  Function available for vault managers to set the boolean value deciding wether
-     * to re-invest into the LP or not
-     * @param _dontInvestWant, new booelan value to use
-     */
-    function setDontInvestWant(bool _dontInvestWant)
-        external
-        onlyVaultManagers
-    {
-        dontInvestWant = _dontInvestWant;
-    }
-
-    /*
-     * @notice
-     *  Function available for vault managers to set the minimum reward to harvest
-     * @param _minRewardToHarvest, new value to use
-     */
-    function setMinRewardToHarvest(uint256 _minRewardToHarvest)
-        external
-        onlyVaultManagers
-    {
-        minRewardToHarvest = _minRewardToHarvest;
-    }
-
-    /*
-     * @notice
-     *  Function available for vault managers to set the minimum amount to sell
-     * @param _minAmountToSell, new value to use
-     */
-    function setMinAmountToSell(uint256 _minAmountToSell)
-        external
-        onlyVaultManagers
-    {
-        minAmountToSell = _minAmountToSell;
-    }
-
-    /*
-     * @notice
-     *  Function available for vault managers to set the max time between harvests
-     * @param _maxEpochTime, new value to use
-     */
-    function setMaxEpochTime(uint256 _maxEpochTime)
-        external
-        onlyVaultManagers
-    {
-        maxEpochTime = _maxEpochTime;
-    }
-
-    /*
-     * @notice
-     *  Function available for vault managers to set the auto protection
-     * @param _autoProtectionDisabled, new value to use
-     */
-    function setAutoProtectionDisabled(bool _autoProtectionDisabled)
-        external
-        onlyVaultManagers
-    {
-        autoProtectionDisabled = _autoProtectionDisabled;
-    }
-
-    /*
-     * @notice
-     *  Function available for vault managers to set the maximum allowed loss
-     * @param _maxPercentageLoss, new value to use
-     */
-    function setMaxPercentageLoss(uint256 _maxPercentageLoss)
-        external
-        onlyVaultManagers
-    {
-        require(_maxPercentageLoss <= RATIO_PRECISION, "too Big");
-        maxPercentageLoss = _maxPercentageLoss;
-    }
-
-    /*
     * @notice
-    * External function for vault managers to set launchHarvest
+    * Function available to vault managers to set Tripod parameters.
+    *   We combine them all to save byte code
+    * @param _dontInvestWant, new booelan value to use
+    * @param _minRewardToHarvest, new value to use
+    * @param _minAmountToSell, new value to use
+    * @param _maxEpochTime, new value to use
+    * @param _autoProtectionDisabled, new value to use
+    * @param _maxPercentageLoss, new value to use
+    * @param _newLaunchHarvest, bool to have keepers launch a harvest
     */
-    function setLaunchHarvest(bool _newLaunchHarvest) 
-        external 
-        onlyVaultManagers 
-    {
+    function setParamaters(
+        bool _dontInvestWant,
+        uint256 _minRewardToHarvest,
+        uint256 _minAmountToSell,
+        uint256 _maxEpochTime,
+        bool _autoProtectionDisabled,
+        uint256 _maxPercentageLoss,
+        bool _newLaunchHarvest
+    ) external onlyVaultManagers {
+        dontInvestWant = _dontInvestWant;
+        minRewardToHarvest = _minRewardToHarvest;
+        minAmountToSell = _minAmountToSell;
+        maxEpochTime = _maxEpochTime;
+        autoProtectionDisabled = _autoProtectionDisabled;
+        require(_maxPercentageLoss <= RATIO_PRECISION);
+        maxPercentageLoss = _maxPercentageLoss;
         launchHarvest = _newLaunchHarvest;
     }
 
@@ -416,9 +355,9 @@ abstract contract Tripod {
         }
         // Check if it needs to stop starting new epochs after finishing this one.
         // _autoProtect is implemented in children
-        if (_autoProtect() && !autoProtectionDisabled) {
-            dontInvestWant = true;
-        }
+        //if (_autoProtect() && !autoProtectionDisabled) {
+        //    dontInvestWant = true;
+        //}
     	//Exits all positions into equal amounts
         _closeAllPositions();
 
@@ -470,21 +409,21 @@ abstract contract Tripod {
                 (invested[tokenA] *
                     (RATIO_PRECISION - maxPercentageLoss)) /
                     RATIO_PRECISION,
-            "!wrong-balanceA"
+            "!A"
         );
         require(
             balanceOfB() >=
                 (invested[tokenB] *
                     (RATIO_PRECISION - maxPercentageLoss)) /
                     RATIO_PRECISION,
-            "!wrong-balanceB"
+            "!B"
         );
         require(
             balanceOfC() >=
                 (invested[tokenC] *
                     (RATIO_PRECISION - maxPercentageLoss)) /
                     RATIO_PRECISION,
-            "!wrong-balanceC"
+            "!C"
         );
 
         // reset invested balances
@@ -521,18 +460,16 @@ abstract contract Tripod {
                 invested[tokenA] == 0 &&
                 invested[tokenB] == 0 &&
                 invested[tokenC] == 0,
-                "already invested"
+                "invested"
         ); // don't create LP if we are already invested
 
         // Open the LP position
         (uint256 amountA, uint256 amountB, uint256 amountC) = createLP();
-        // Open hedge
-        (uint256 costHedgeA, uint256 costHedgeB, uint256 costHedgeC) = hedgeLP();
 
         // Set invested amounts
-        invested[tokenA] = amountA + costHedgeA;
-        invested[tokenB] = amountB + costHedgeB;
-        invested[tokenC] = amountC + costHedgeC;
+        invested[tokenA] = amountA;
+        invested[tokenB] = amountB;
+        invested[tokenC] = amountC;
 
         (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
             getWeights(invested[tokenA], invested[tokenB], invested[tokenC]);
@@ -562,10 +499,6 @@ abstract contract Tripod {
         }
 
         if (shouldStartEpoch()) {
-            return true;
-        }
-        
-        if (shouldEndEpoch()) {
             return true;
         }
 
@@ -638,8 +571,6 @@ abstract contract Tripod {
     function tendTrigger(uint256 /*callCost*/) external view virtual returns (bool) {
         return false;
     }
-
-    function getHedgeProfit() public view virtual returns (uint256, uint256, uint256);
 
     /*
     * @notice
@@ -836,14 +767,12 @@ abstract contract Tripod {
     {
         // Current status of tokens in LP (includes potential IL)
         (uint256 _aBalance, uint256 _bBalance, uint256 _cBalance) = balanceOfTokensInLP();
-        // Include hedge payoffs
-        (uint256 aProfit, uint256 bProfit, uint256 cProfit) = getHedgeProfit();
 
         // Add remaining balance in tripod (if any)
         unchecked{
-            _aBalance += balanceOfA() + aProfit;
-            _bBalance += balanceOfB() + bProfit;
-            _cBalance += balanceOfC() + cProfit;
+            _aBalance += balanceOfA();// + aProfit;
+            _bBalance += balanceOfB();// + bProfit;
+            _cBalance += balanceOfC();// + cProfit;
         }
 
         // Include rewards (swapping them if not tokenA or tokenB)
@@ -996,7 +925,9 @@ abstract contract Tripod {
         unchecked {
             uint256 precision = 10 ** IERC20Extended(toSwapFrom).decimals();
             
-            info = TripodMath.RebalanceInfo(
+            uint256 p;
+
+            (n, p) = TripodMath.getNandP(TripodMath.RebalanceInfo(
                 precision,
                 invested[toSwapFrom],
                 info.a1,
@@ -1008,11 +939,7 @@ abstract contract Tripod {
                 info.c1,
                 quote(toSwapFrom, toSwapTo1, precision),
                 0
-            );
-
-            uint256 p;
-
-            (n, p) = TripodMath.getNandP(info);
+            ));
 
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
@@ -1051,7 +978,7 @@ abstract contract Tripod {
         address toTokenAddress
     ) internal view returns(uint256, uint256, uint256) {
 
-        info = TripodMath.RebalanceInfo(
+        (uint256 toSwapFrom0, uint256 toSwapFrom1) = TripodMath.getNbAndNc(TripodMath.RebalanceInfo(
             0,
             invested[toTokenAddress],
             info.a1,
@@ -1063,9 +990,7 @@ abstract contract Tripod {
             info.c1,
             quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
             10 ** IERC20Extended(token1Address).decimals()
-        );
-
-        (uint256 toSwapFrom0, uint256 toSwapFrom1) = TripodMath.getNbAndNc(info);
+        ));
 
         uint256 amountOut = quote(
             token0Address, 
@@ -1103,16 +1028,6 @@ abstract contract Tripod {
             (, , _balance) = estimatedTotalAssetsAfterBalance();
         }
     }
-
-    function getHedgeBudget(address token)
-        public
-        view
-        virtual
-        returns (uint256);
-
-    function hedgeLP() internal virtual returns (uint256, uint256, uint256);
-
-    function closeHedge() internal virtual;
 
     /*
      * @notice
@@ -1184,9 +1099,9 @@ abstract contract Tripod {
                 address(0x0000000000000000000000000000000000000348) // USD
             );
 
-        require(price > 0, "Chainlink price <= 0");
-        require(updateTime != 0, "Incomplete round");
-        require(answeredInRound >= roundId, "Stale price");
+        require(price > 0);
+        require(updateTime != 0);
+        require(answeredInRound >= roundId);
         //return the dollar amount to 1e8
         return uint256(price) * _amount / (10 ** IERC20Extended(_token).decimals());
     }
@@ -1219,9 +1134,9 @@ abstract contract Tripod {
         uint256 minCOut
     ) internal virtual {
         burnLP(_amount);
-        require(minAOut <= balanceOfA(), "!sandwiched");
-        require(minBOut <= balanceOfB(), "!sandwiched");
-        require(minCOut <= balanceOfC(), "!sandwiched");
+        require(minAOut <= balanceOfA(), "min");
+        require(minBOut <= balanceOfB(), "min");
+        require(minCOut <= balanceOfC(), "min");
     }
 
     function getReward() internal virtual;
@@ -1235,40 +1150,7 @@ abstract contract Tripod {
      *  Function available internally swapping amounts necessary to swap rewards
      *  This can be overwritten in order to apply custom reward token swaps
      */
-    function swapRewardTokens() internal virtual {
-        address _tokenA = tokenA;
-        address _tokenB = tokenB;
-        address _tokenC = tokenC;
-        address[] memory _rewardTokens = rewardTokens;
-        for (uint256 i; i < _rewardTokens.length; ++i) {
-            address reward = _rewardTokens[i];
-            uint256 _rewardBal = IERC20(reward).balanceOf(address(this));
-            // If the reward token is either A B or C, don't swap
-            if (reward == _tokenA || reward == _tokenB || reward == _tokenC || _rewardBal == 0) {
-                continue;
-            // If the referenceToken is either A B or C, swap rewards against it 
-            } else if (usingReference) {
-                    swapReward(reward, referenceToken, _rewardBal, 0); 
-            } else {
-                // Assume that position has already been liquidated
-                //Instead this should just return the token with the lowest ratio
-                (uint256 ratioA, uint256 ratioB, uint256 ratioC) = getRatios(
-                    balanceOfA(),
-                    balanceOfB(),
-                    balanceOfC()
-                );
-       
-                //If everything is equal use A   
-                if(ratioA <= ratioB && ratioA <= ratioC) {
-                    swapReward(reward, _tokenA, _rewardBal, 0);
-                } else if(ratioB <= ratioC) {
-                    swapReward(reward, _tokenB, _rewardBal, 0);
-                } else {
-                    swapReward(reward, _tokenC, _rewardBal, 0);
-                }
-            }
-        }
-    }
+    function swapRewardTokens() internal virtual;
 
     function swap(
         address _tokenFrom,
@@ -1313,9 +1195,6 @@ abstract contract Tripod {
     function _closePosition() internal returns (uint256, uint256, uint256) {
         // Unstake LP from staking contract
         withdrawLP(balanceOfStake());
-
-        // Close the hedge
-        closeHedge();
 
         if (balanceOfPool() == 0) {
             return (0, 0, 0);
@@ -1400,30 +1279,8 @@ abstract contract Tripod {
         return rewardTokens;
     }
 
-    /*
-    * @notice
-    *   Public function return the amount of reward tokens we currently have
-    */
-    function getRewardTokensLength() public view returns(uint256) {
-        return rewardTokens.length;
-    }
-
     function balanceOfPool() public view virtual returns (uint256);
 
-    /*
-     * @notice
-     *  Function available publicly returning the tripod's balance of rewards
-     * @return array of balances
-     */
-    function balanceOfRewardToken() public view returns (uint256[] memory) {
-        address[] memory _rewardTokens = rewardTokens;
-        uint256 length = _rewardTokens.length;
-        uint256[] memory _balances = new uint256[](length);
-        for (uint8 i; i < length; ++i) {
-            _balances[i] = IERC20(_rewardTokens[i]).balanceOf(address(this));
-        }
-        return _balances;
-    }
 
     function balanceOfStake() public view virtual returns (uint256 _balance);
 
@@ -1455,9 +1312,9 @@ abstract contract Tripod {
         uint256 _b = balanceOfB();
         uint256 _c = balanceOfC();
         _closeAllPositions();
-        require(expectedBalanceA <= balanceOfA() - _a, "!sandwiched");
-        require(expectedBalanceB <= balanceOfB() - _b, "!sandwiched");
-        require(expectedBalanceC <= balanceOfC() - _c, "!sandwiched");
+        require(expectedBalanceA <= balanceOfA() - _a, "min");
+        require(expectedBalanceB <= balanceOfB() - _b, "min");
+        require(expectedBalanceC <= balanceOfC() - _c, "min");
         // reset invested balances or we wont be able to open up a position again
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
         investedWeight[tokenA] = investedWeight[tokenB] = investedWeight[tokenC] = 0;
@@ -1525,9 +1382,9 @@ abstract contract Tripod {
      * @param _token, address of the token to sweep
      */
     function sweep(address _token) external onlyGovernance {
-        require(_token != tokenA, "TokenA");
-        require(_token != tokenB, "TokenB");
-        require(_token != tokenC, "TokenC");
+        require(_token != tokenA);
+        require(_token != tokenB);
+        require(_token != tokenC);
 
         SafeERC20.safeTransfer(
             IERC20(_token),
@@ -1558,7 +1415,7 @@ abstract contract Tripod {
             IERC20(tokenC).safeApprove(_newProvider, type(uint256).max);
             providerC = newProvider;
         } else {
-            revert("Unsupported token");
+            revert("!token");
         }
     }
 

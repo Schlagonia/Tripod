@@ -63,8 +63,17 @@ contract StrategyUnevenTest is StrategyFixture {
 
         skip(1 days);
 
-        vm.prank(gov);
-        tripod.setDontInvestWant(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            true,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         vm.prank(keeper);
         tripod.harvest();
@@ -393,8 +402,17 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
 
-        vm.prank(management);
-        tripod.setDontInvestWant(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            true,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         setProvidersHealthCheck(false);
 

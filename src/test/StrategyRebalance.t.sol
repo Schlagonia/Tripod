@@ -199,8 +199,17 @@ contract RebalanceTest is StrategyFixture {
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
 
-        vm.prank(management);
-        tripod.setDontInvestWant(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            true,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         setProvidersHealthCheck(false);
 

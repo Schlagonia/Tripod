@@ -74,7 +74,7 @@ contract ManualOpsTest is StrategyFixture {
         uint256 lpBalance = tripod.totalLpBalance(); 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
-        vm.expectRevert(bytes("!sandwiched"));
+        vm.expectRevert(bytes("min"));
         tripod.removeLiquidityManually(
             _a * 11_000 / 10_000,
             _b * 11_000 / 10_000,
@@ -139,7 +139,7 @@ contract ManualOpsTest is StrategyFixture {
         setProvidersHealthCheck(false);
         
         vm.prank(keeper);
-        vm.expectRevert("!authorized");
+        vm.expectRevert(bytes("auth"));
         tripod.harvest();
 
         vm.prank(address(69));
@@ -155,7 +155,7 @@ contract ManualOpsTest is StrategyFixture {
         vm.prank(management);
         tripod.updateRewardTokens();
         
-        assertEq(tripod.getRewardTokensLength(), 2);
+        assertEq(tripod.getRewardTokens().length, 2);
 
     }
 
@@ -167,7 +167,7 @@ contract ManualOpsTest is StrategyFixture {
         assertEq(IERC20(cvx).balanceOf(address(tripod)), 4e18);
 
         vm.prank(address(666));
-        vm.expectRevert(bytes("!authorized"));
+        vm.expectRevert(bytes("auth"));
         tripod.changeToSwapTo();
 
         vm.prank(management);

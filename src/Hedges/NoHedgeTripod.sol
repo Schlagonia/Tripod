@@ -12,8 +12,8 @@ abstract contract NoHedgeTripod is Tripod {
         address _weth,
         address _pool
     ) Tripod(_providerA, _providerB, _providerC, _weth, _pool) {}
-
-    function getHedgeBudget(address /*token*/)
+    /*
+    function getHedgeBudget(address /*token)
         public
         pure
         override
@@ -49,4 +49,5 @@ abstract contract NoHedgeTripod is Tripod {
     function _autoProtect() internal pure override returns (bool) {
         return false;
     }
+    */
 }

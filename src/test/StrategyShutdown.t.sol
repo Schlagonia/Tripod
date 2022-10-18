@@ -44,8 +44,17 @@ contract StrategyShutdownTest is StrategyFixture {
         vm.prank(gov);
         _vault.setEmergencyShutdown(true);
 
-        vm.prank(gov);
-        tripod.setDontInvestWant(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            true,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         //Have to harvest first or it will report a loss
         //Testing harvesting the provider directly
@@ -94,8 +103,17 @@ contract StrategyShutdownTest is StrategyFixture {
 
         skip(1 days);
 
-        vm.prank(gov);
-        tripod.setDontInvestWant(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            true,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         vm.prank(keeper);
         tripod.harvest();

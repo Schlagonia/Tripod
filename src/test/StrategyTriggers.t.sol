@@ -47,25 +47,61 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(!tripod.harvestTrigger(1), "Check 2");
         skip(1);
 
-        vm.prank(gov);
-        tripod.setLaunchHarvest(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            true
+        ); 
+        vm.stopPrank();
 
         assertTrue(tripod.harvestTrigger(3), "check 3");
         
-        vm.prank(gov);
-        tripod.setLaunchHarvest(false);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            false
+        ); 
+        vm.stopPrank();
         skip(1);
 
         assertTrue(!tripod.harvestTrigger(1), "Check 4");
 
-        vm.prank(gov);
-        tripod.setMaxEpochTime(1 days);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            1 days,
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
         skip(tripod.maxEpochTime() + 1);
 
         assertTrue(tripod.harvestTrigger(3), "check 5");
 
-        vm.prank(gov);
-        tripod.setDontInvestWant(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            true,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         skip(1);
         vm.prank(keeper);
@@ -75,8 +111,17 @@ contract StrategyTriggerTest is StrategyFixture {
         //Should have credit available but dontInvestWant should stop it 
         assertTrue(!tripod.harvestTrigger(1), "Check 6");
 
-        vm.prank(gov);
-        tripod.setDontInvestWant(false);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            false,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         assertTrue(tripod.harvestTrigger(1), "Check 7");
 
@@ -96,13 +141,31 @@ contract StrategyTriggerTest is StrategyFixture {
         //Should still be false since minReward is still not set
         assertTrue(!tripod.tendTrigger(1), "Check 2");
 
-        vm.prank(gov);
-        tripod.setMinRewardToHarvest(100);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            100,
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         assertTrue(tripod.tendTrigger(1), "check 3");
 
-        vm.prank(gov);
-        tripod.setMinRewardToHarvest(100e18);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            100e18,
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         assertTrue(!tripod.tendTrigger(3), "Check 4");
     }
