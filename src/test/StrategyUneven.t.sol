@@ -11,6 +11,7 @@ import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVault} from "../interfaces/Vault.sol";
 import {StrategyParams} from "../interfaces/Vault.sol";
+import {TripodMath} from "../libraries/TripodMath.sol";
 
 contract StrategyUnevenTest is StrategyFixture {
     using SafeERC20 for IERC20;
@@ -238,9 +239,12 @@ contract StrategyUnevenTest is StrategyFixture {
         uint256 bProfit = assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault));
         uint256 cProfit = assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault));
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             aProfit + deposited[0],
+            tripod.invested(tripod.tokenB()),
             bProfit + deposited[1],
+            tripod.invested(tripod.tokenC()),
             cProfit + deposited[2]
         );
         console.log("A ratio ", aRatio, " profit was ", aProfit);
@@ -281,9 +285,12 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
         uint256 bProfit = assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault));
         uint256 cProfit = assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault));
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             aProfit + deposited[0],
+            tripod.invested(tripod.tokenB()),
             bProfit + deposited[1],
+            tripod.invested(tripod.tokenC()),
             cProfit + deposited[2]
         );
         console.log("A ratio ", aRatio, " profit was ", aProfit);
@@ -303,9 +310,12 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -320,9 +330,12 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
 
         ( _a,  _b,  _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        (uint256 aRatio2, uint256 bRatio2, uint256 cRatio2) = tripod.getRatios(
+        (uint256 aRatio2, uint256 bRatio2, uint256 cRatio2) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -346,9 +359,12 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
         assertRelApproxEq(deposited[1], _b, DELTA);
         assertRelApproxEq(deposited[2], _c, DELTA);
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
         console.log("first ratios");
@@ -363,9 +379,12 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
 
         ( _a,  _b,  _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        ( aRatio,  bRatio,  cRatio) = tripod.getRatios(
+        ( aRatio,  bRatio,  cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -389,9 +408,12 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
 
         (uint256 _a, uint256  _b, uint256  _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        (uint256 aRatio, uint256  bRatio, uint256  cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256  bRatio, uint256  cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 

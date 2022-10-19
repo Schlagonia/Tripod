@@ -15,6 +15,7 @@ import {StrategyParams} from "../interfaces/Vault.sol";
 import { IBalancerVault } from "../interfaces/Balancer/IBalancerVault.sol";
 import { IBalancerPool } from "../interfaces/Balancer/IBalancerPool.sol";
 import { IAsset } from "../interfaces/Balancer/IAsset.sol";
+import {TripodMath} from "../libraries/TripodMath.sol";
 
 contract StrategyILTest is StrategyFixture {
     using SafeERC20 for IERC20;
@@ -160,9 +161,12 @@ contract StrategyILTest is StrategyFixture {
 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -181,19 +185,19 @@ contract StrategyILTest is StrategyFixture {
         //Harvest would fail if IL caused more than a .1% loss
         tripod.harvest();
 
-        uint256 aProfit = assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault));
-        uint256 bProfit = assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault));
-        uint256 cProfit = assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault));
+        //uint256 aProfit = assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault));
+        //uint256 bProfit = assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault));
+        //uint256 cProfit = assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault));
 
-        ( aRatio, bRatio, cRatio) = tripod.getRatios(
-            aProfit + deposited[0],
-            bProfit + deposited[1],
-            cProfit + deposited[2]
+        ( aRatio, bRatio, cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
+            assetFixtures[0].want.balanceOf(address(assetFixtures[0].vault)) + deposited[0],
+            tripod.invested(tripod.tokenB()),
+            assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault)) + deposited[1],
+            tripod.invested(tripod.tokenC()),
+            assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault)) + deposited[2]
         );
-        console.log("A ratio ", aRatio, " profit was ", aProfit);
-        console.log("B ratio ", bRatio, " profit was ", bProfit);
-        console.log("C ratio ", cRatio, " profit was ", cProfit);
-  
+
         assertRelApproxEq(aRatio, bRatio, DELTA);
         assertRelApproxEq(bRatio, cRatio, DELTA);
     }

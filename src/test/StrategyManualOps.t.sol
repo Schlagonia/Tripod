@@ -82,28 +82,6 @@ contract ManualOpsTest is StrategyFixture {
         );
     }
 
-    function testManualRewardSell(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
-        skip(1);
-        deal(cvx, address(tripod), 4e18);
-        assertEq(IERC20(cvx).balanceOf(address(tripod)), 4e18);
-
-        IERC20 token = IERC20(tokenAddrs["USDC"]);
-        uint256 before = token.balanceOf(address(tripod));
-        vm.startPrank(management);
-        tripod.swapTokenForTokenManually(
-            cvx,
-            address(token),
-            4e18,
-            0,
-            false
-        );
-
-        assertGt(token.balanceOf(address(tripod)), before);
-        assertEq(IERC20(cvx).balanceOf(address(tripod)), 0);
-    }
-
     function testReturnFundsManually(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
@@ -176,25 +154,14 @@ contract ManualOpsTest is StrategyFixture {
         IERC20 token = IERC20(tokenAddrs["DAI"]);
         uint256 before = token.balanceOf(address(tripod));
         //Swap reward token and make sure it went to dai not usdc
-        vm.startPrank(management);
-        tripod.swapTokenForTokenManually(
-            cvx,
-            address(0),
-            4e18,
-            0,
-            false
-        );
-        vm.stopPrank();
-
-        assertGt(token.balanceOf(address(tripod)), before);
-        assertEq(IERC20(cvx).balanceOf(address(tripod)), 0);
-
+       
         //make sure we can add the dai into an lp token
         uint256 beforeBal = tripod.totalLpBalance();
         vm.prank(management);
         tripod.tend();
 
         assertGt(tripod.totalLpBalance(), beforeBal);
+        assertEq(IERC20(cvx).balanceOf(address(tripod)), 0);
 
         //Earn interest
         skip(1 days);
