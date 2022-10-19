@@ -10,6 +10,7 @@ import {ExtendedTest} from "./ExtendedTest.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IVault} from "../../interfaces/Vault.sol";
 import {BalancerTripod} from "../../DEXes/BalancerTripod.sol";
+import {BalancerTripodCloner} from "../../DEXes/BalancerTripodCloner.sol";
 import {ProviderStrategy} from "../../ProviderStrategy.sol";
 import {AggregatorV3Interface} from "../../interfaces/AggregatorV3Interface.sol";
 
@@ -37,6 +38,7 @@ contract StrategyFixture is ExtendedTest {
 
     Pool public poolUsing;
 
+    BalancerTripodCloner public cloner;
     BalancerTripod public tripod;
     IERC20 public weth;
 
@@ -172,7 +174,7 @@ contract StrategyFixture is ExtendedTest {
         address _poolToken,
         address _rewardsContract
     ) internal {
-        tripod = new BalancerTripod(
+        cloner = new BalancerTripodCloner(
             _providerA,
             _providerB,
             _providerC,
@@ -180,6 +182,7 @@ contract StrategyFixture is ExtendedTest {
             _pool,
             _rewardsContract
         );
+        tripod = BalancerTripod(cloner.original());
         //console.log("New tripod  created");
         vm.prank(gov);
         tripod.setKeeper(keeper);

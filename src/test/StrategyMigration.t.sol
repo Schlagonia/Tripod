@@ -16,7 +16,7 @@ contract StrategyMigrationTest is StrategyFixture {
     }
 
     function testCloneTripod() public {
-        address newTripod = tripod.cloneBalancerTripod(
+        address newTripod = cloner.cloneBalancerTripod(
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
@@ -28,8 +28,8 @@ contract StrategyMigrationTest is StrategyFixture {
         BalancerTripod _newTripod = BalancerTripod(newTripod);
 
         assertEq(poolUsing.pool, _newTripod.pool());
-        assertTrue(!_newTripod.isOriginal());
-
+        //assertTrue(!_newTripod.isOriginal());
+        /*
         vm.expectRevert();
 
         _newTripod.cloneBalancerTripod(
@@ -40,7 +40,7 @@ contract StrategyMigrationTest is StrategyFixture {
             poolUsing.pool,
             poolUsing.rewardsContract
         );
-
+        */
         vm.expectRevert();
 
         _newTripod.initialize(
@@ -103,7 +103,7 @@ contract StrategyMigrationTest is StrategyFixture {
         //clone old pool tripod with new pool
         poolUsing = pools[2];
 
-        address newTripod = tripod.cloneBalancerTripod(
+        address newTripod = cloner.cloneBalancerTripod(
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
@@ -115,6 +115,7 @@ contract StrategyMigrationTest is StrategyFixture {
         BalancerTripod _newTripod = BalancerTripod(newTripod);
 
         assertEq(poolUsing.pool, _newTripod.pool());
+        /*
         assertTrue(!_newTripod.isOriginal());
 
         vm.expectRevert();
@@ -127,7 +128,7 @@ contract StrategyMigrationTest is StrategyFixture {
             poolUsing.pool,
             poolUsing.rewardsContract
         );
-
+        */
         vm.expectRevert();
 
         _newTripod.initialize(

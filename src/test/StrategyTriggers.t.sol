@@ -9,6 +9,7 @@ import {BalancerTripod} from "../DEXes/BalancerTripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {IVault} from "../interfaces/Vault.sol";
+import {BalancerLP} from "../libraries/BalancerLP.sol";
 
 interface IBaseFee {
     function setMaxAcceptableBaseFee(uint256) external;

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0
-pragma solidity ^0.8.12;
+pragma solidity >=0.8.12;
 pragma experimental ABIEncoderV2;
+
+
+
+
 
 // Import necessary libraries and interfaces:
 // NoHedgetripod to inherit from
@@ -549,6 +553,7 @@ library SafeERC20 {
 
 
 
+
 interface IFeedRegistry {
     function getFeed(address, address) external view returns (address);
     function latestRoundData(address, address) external view returns (
@@ -785,12 +790,11 @@ library TripodMath {
     * @return, the relative weight for each token expressed as 1e18
     */
     function getWeights(
-        address _tripod,
         uint256 investedA,
         uint256 investedB,
         uint256 investedC
     ) public view returns (uint256 wA, uint256 wB, uint256 wC) {
-        ITripod tripod = ITripod(_tripod);
+        ITripod tripod = ITripod(address(this));
         unchecked {
             uint256 adjustedA = getOraclePrice(tripod.tokenA(), investedA);
             uint256 adjustedB = getOraclePrice(tripod.tokenB(), investedB);
@@ -836,12 +840,12 @@ library TripodMath {
      * - rebalancing of tokens to maintain token ratios
      * @return estimated tokenA tokenB and tokenC balances
      */
-    function estimatedTotalAssetsAfterBalance(address _tripod)
+    function estimatedTotalAssetsAfterBalance()
         public
         view
         returns (uint256, uint256, uint256)
     {
-        ITripod tripod = ITripod(_tripod);
+        ITripod tripod = ITripod(address(this));
         // Current status of tokens in LP (includes potential IL)
         (uint256 _aBalance, uint256 _bBalance, uint256 _cBalance) = tripod.balanceOfTokensInLP();
 
@@ -882,7 +886,7 @@ library TripodMath {
                 }
             }
         }
-        return quoteRebalance(address(tripod), _aBalance, _bBalance, _cBalance);
+        return quoteRebalance(_aBalance, _bBalance, _cBalance);
     }
 
     /*
@@ -891,12 +895,11 @@ library TripodMath {
     *    But it works...
     */
     function quoteRebalance(
-        address _tripod,
         uint256 startingA,
         uint256 startingB,
         uint256 startingC
     ) public view returns(uint256, uint256, uint256) {
-        ITripod tripod = ITripod(_tripod);
+        ITripod tripod = ITripod(address(this));
         Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
 
         //We cannot rebalance with a 0 starting position, should only be applicable if called when everything is 0 so just return
@@ -1008,7 +1011,6 @@ library TripodMath {
         address toSwapTo0, 
         address toSwapTo1
     ) public view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
-        //ITripod tripod = ITripod(_tripod);
         uint256 swapTo0;
         uint256 swapTo1;
 
@@ -1068,7 +1070,6 @@ library TripodMath {
         address token1Address,
         address toTokenAddress
     ) public view returns(uint256, uint256, uint256) {
-        //ITripod tripod = ITripod(_tripod);
 
         (uint256 toSwapFrom0, uint256 toSwapFrom1) =getNbAndNc(RebalanceInfo(
             0,
@@ -1117,11 +1118,6 @@ library TripodMath {
         if (delta < maxRelDelta) return true;
     }
 
-    function getAvgRatio(ITripod tripod, uint256 ratioA, uint256 ratioB, uint256 ratioC, Tokens memory tokens) public view returns(uint256) {
-        return (ratioA * tripod.investedWeight(tokens.tokenA) + 
-                    ratioB * tripod.investedWeight(tokens.tokenB) + 
-                        ratioC * tripod.investedWeight(tokens.tokenC)) / RATIO_PRECISION;
-    }
 }
 
 
@@ -1674,7 +1670,6 @@ abstract contract Tripod {
 
         (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
             TripodMath.getWeights(
-                address(this),
                 invested[tokenA], 
                 invested[tokenB], 
                 invested[tokenC]
@@ -1956,7 +1951,7 @@ abstract contract Tripod {
         view
         returns (uint256, uint256, uint256)
     {
-        return TripodMath.estimatedTotalAssetsAfterBalance(address(this));
+        return TripodMath.estimatedTotalAssetsAfterBalance();
     }
 
     /*
@@ -1973,11 +1968,11 @@ abstract contract Tripod {
         returns (uint256 _balance)
     {
         if (_provider == address(providerA)) {
-            (_balance, , ) = TripodMath.estimatedTotalAssetsAfterBalance(address(this));
+            (_balance, , ) = TripodMath.estimatedTotalAssetsAfterBalance();
         } else if (_provider == address(providerB)) {
-            (, _balance, ) = TripodMath.estimatedTotalAssetsAfterBalance(address(this));
+            (, _balance, ) = TripodMath.estimatedTotalAssetsAfterBalance();
         } else if (_provider == address(providerC)) {
-            (, , _balance) = TripodMath.estimatedTotalAssetsAfterBalance(address(this));
+            (, , _balance) = TripodMath.estimatedTotalAssetsAfterBalance();
         }
     }
 
@@ -2720,6 +2715,8 @@ interface IBalancerTripod{
     function toSwapToIndex() external view returns(uint256); 
     function toSwapToPoolId() external view returns(bytes32);
 
+    function balToken() external view returns(address);
+
     function pool() external view returns(address);
     function tokenA() external view returns (address);
     function balanceOfA() external view returns(uint256);
@@ -2743,18 +2740,6 @@ library BalancerLP {
     //The main Balancer vault
     IBalancerVault internal constant balancerVault = 
         IBalancerVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
-    //Pools we use for swapping rewards
-    bytes32 internal constant balEthPoolId = 
-        bytes32(0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014);
-    bytes32 internal constant auraEthPoolId = 
-        bytes32(0xc29562b045d80fd77c69bec09541f5c16fe20d9d000200000000000000000251);
-
-    //Base Reward Tokens
-    address internal constant auraToken = 
-        0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF;
-    address internal constant balToken =
-        0xba100000625a3754423978a60c9317c58a424e3D;
-
     ICurveFi internal constant curvePool =
         ICurveFi(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
 
@@ -2764,12 +2749,12 @@ library BalancerLP {
     *       This will not take into account the invested weight so it can be used to determine how in
             or out balance the pool currently is
     */
-    function balanceOfTokensInLP(address _tripod)
+    function balanceOfTokensInLP()
         public
         view
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+        IBalancerTripod tripod = IBalancerTripod(address(this));
         uint256 lpBalance = tripod.totalLpBalance();
      
         if(lpBalance == 0) return (0, 0, 0);
@@ -2808,34 +2793,35 @@ library BalancerLP {
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn
-    ) public view returns (uint256) {
+    ) public view returns(uint256 amountOut) {
         if(_amountIn == 0) {
             return 0;
         }
-        IBalancerTripod tripod = IBalancerTripod(msg.sender);
+
+        IBalancerTripod tripod = IBalancerTripod(address(this));
 
         require(_tokenTo == tripod.tokenA() || 
                     _tokenTo == tripod.tokenB() || 
                         _tokenTo == tripod.tokenC()); 
 
-        if(_tokenFrom == balToken) {
+        if(_tokenFrom == tripod.balToken()) {
             (, int256 balPrice,,,) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
-                balToken,
+                tripod.balToken(),
                 address(0x0000000000000000000000000000000000000348) // USD
             );
 
             //Get the latest oracle price for bal * amount of bal / (1e8 + (diff of token decimals to bal decimals)) to adjust oracle price that is 1e8
-            return uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
+            amountOut = uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
         } else if(_tokenFrom == tripod.tokenA() || _tokenFrom == tripod.tokenB() || _tokenFrom == tripod.tokenC()){
 
             // Call the quote function in CRV 3pool
-            return curvePool.get_dy(
+            amountOut = curvePool.get_dy(
                 tripod.curveIndex(_tokenFrom), 
                 tripod.curveIndex(_tokenTo), 
                 _amountIn
             );
         } else {
-            return 0;
+            amountOut = 0;
         }
     }
 /*
@@ -2883,9 +2869,9 @@ library BalancerLP {
             block.timestamp
         );
     }
-*/
-    function getRewardSwaps(address _tripod, uint256 balBalance, uint256 auraBalance) public view returns(IBalancerVault.BatchSwapStep[] memory swaps) {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+*
+    function getRewardSwaps(uint256 balBalance, uint256 auraBalance) public view returns(IBalancerVault.BatchSwapStep[] memory swaps) {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
         swaps = new IBalancerVault.BatchSwapStep[](4);
 
         //Sell bal -> weth
@@ -2925,8 +2911,8 @@ library BalancerLP {
         );
     }
     
-    function getRewardAssets(address _tripod) public view returns(IAsset[] memory) {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+    function getRewardAssets() public view returns(IAsset[] memory) {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
         IAsset[] memory assets = new IAsset[](4);
         assets[0] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
         assets[1] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
@@ -2935,10 +2921,10 @@ library BalancerLP {
         return assets;
     }
 
-    function swapRewardTokens(address _tripod) public {
-        IBalancerTripod tripod =IBalancerTripod(_tripod);
-        uint256 balBalance = IERC20(balToken).balanceOf(_tripod);
-        uint256 auraBalance = IERC20(auraToken).balanceOf(_tripod);
+    function swapRewardTokens() public {
+        IBalancerTripod tripod =IBalancerTripod(address(this));
+        uint256 balBalance = IERC20(balToken).balanceOf(address(this));
+        uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
 
         //Cant swap 0
         if(balBalance == 0 || auraBalance == 0) return;
@@ -3003,8 +2989,8 @@ library BalancerLP {
         );
     }
 
-    function createTendLP(address _tripod) public {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+    function createTendLP() public {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
         IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](2);
         
         IAsset[] memory assets = new IAsset[](3);
@@ -3039,8 +3025,8 @@ library BalancerLP {
         limits[0] = int(balance);
     }
 
-    function tendAssets(address _tripod) public view returns(IAsset[] memory) {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+    function tendAssets() public view returns(IAsset[] memory) {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
   
         IAsset[] memory assets = new IAsset[](3);
 
@@ -3053,7 +3039,7 @@ library BalancerLP {
         return assets;
     }
 
-    function tendLimits(address _tripod, uint256 balance) public pure returns(int[] memory limits) {
+    function tendLimits(uint256 balance) public pure returns(int[] memory limits) {
         limits = new int[](3);
         limits[0] = int(balance);
         return limits;
@@ -3071,7 +3057,7 @@ library BalancerLP {
                 payable(_address),
                 false
             );
-    }
+    }*/
     
 }
 
@@ -3081,7 +3067,7 @@ contract BalancerTripod is Tripod {
     using SafeCast for int256;
     
     // Used for cloning, will automatically be set to false for other clones
-    bool public isOriginal = true;
+    //bool public isOriginal = true;
 
     //Used for swaps. We default to swap rewards to usdc
     address internal constant usdcAddress =
@@ -3116,6 +3102,10 @@ contract BalancerTripod is Tripod {
     IBalancerVault internal constant balancerVault = 
         IBalancerVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
     //Pools we use for swapping rewards
+    bytes32 internal constant balEthPoolId = 
+        bytes32(0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014);
+    bytes32 internal constant auraEthPoolId = 
+        bytes32(0xc29562b045d80fd77c69bec09541f5c16fe20d9d000200000000000000000251);
     bytes32 internal constant ethUsdcPoolId =
         bytes32(0x96646936b91d6b9d7d0c47c496afbf3d6ec7b6f8000200000000000000000019);
     bytes32 internal constant ethDaiPoolId = 
@@ -3143,7 +3133,7 @@ contract BalancerTripod is Tripod {
     //Base Reward Tokens
     address internal constant auraToken = 
         0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF;
-    address internal constant balToken =
+    address public constant balToken =
         0xba100000625a3754423978a60c9317c58a424e3D;
 
     /*
@@ -3229,7 +3219,7 @@ contract BalancerTripod is Tripod {
         maxApprove(tokenC, address(curvePool));
     }
 
-    
+    /*
     event Cloned(address indexed clone);
 
     /*
@@ -3242,7 +3232,7 @@ contract BalancerTripod is Tripod {
      * @param _pool, pool to LP
      * @param _rewardsContract The Aura rewards contract specific to this LP token
      * @return newTripod, address of newly deployed tripod
-     */
+     *
     function cloneBalancerTripod(
         address _providerA,
         address _providerB,
@@ -3280,6 +3270,7 @@ contract BalancerTripod is Tripod {
 
         emit Cloned(newTripod);
     }
+    */
 
     /*
      * @notice
@@ -3356,7 +3347,7 @@ contract BalancerTripod is Tripod {
         override
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
-        return BalancerLP.balanceOfTokensInLP(address(this));
+        return BalancerLP.balanceOfTokensInLP();
     }
 
     /*
@@ -3435,7 +3426,12 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            getFundManagement(), 
+            IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            ), 
             limits, 
             block.timestamp
         );
@@ -3503,7 +3499,12 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            getFundManagement(), 
+            IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            ), 
             limits, 
             block.timestamp
         );
@@ -3587,33 +3588,7 @@ contract BalancerTripod is Tripod {
         address _tokenTo,
         uint256 _amountIn
     ) public view override returns (uint256) {
-        if(_amountIn == 0) {
-            return 0;
-        }
-
-        require(_tokenTo == tokenA || 
-                    _tokenTo == tokenB || 
-                        _tokenTo == tokenC); 
-
-        if(_tokenFrom == balToken) {
-            (, int256 balPrice,,,) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
-                balToken,
-                address(0x0000000000000000000000000000000000000348) // USD
-            );
-
-            //Get the latest oracle price for bal * amount of bal / (1e8 + (diff of token decimals to bal decimals)) to adjust oracle price that is 1e8
-            return uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
-        } else if(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC){
-
-            // Call the quote function in CRV 3pool
-            return curvePool.get_dy(
-                curveIndex[_tokenFrom], 
-                curveIndex[_tokenTo], 
-                _amountIn
-            );
-        } else {
-            return 0;
-        }
+        return BalancerLP.quote(_tokenFrom, _tokenTo, _amountIn);
     }
 
     /*
@@ -3623,7 +3598,7 @@ contract BalancerTripod is Tripod {
     *   We sell bal/Aura -> WETH -> toSwapTo
     */
     function swapRewardTokens() internal override {
-        //BalancerLP.swapRewardTokens(address(this));
+        //BalancerLP.swapRewardTokens();
         
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
         uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
@@ -3634,7 +3609,7 @@ contract BalancerTripod is Tripod {
         IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](4);
         //Sell bal -> weth
         swaps[0] = IBalancerVault.BatchSwapStep(
-            0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014, //bal-eth pool id
+            balEthPoolId, //bal-eth pool id
             0,  //Index to use for Bal
             2,  //index to use for Weth
             balBalance,
@@ -3652,7 +3627,7 @@ contract BalancerTripod is Tripod {
 
         //Sell Aura -> Weth
         swaps[2] = IBalancerVault.BatchSwapStep(
-            0xc29562b045d80fd77c69bec09541f5c16fe20d9d000200000000000000000251, //aura eth pool id
+            auraEthPoolId, //aura eth pool id
             1,  //Index to use for Aura
             2,  //index to use for Weth
             auraBalance,
@@ -3680,12 +3655,17 @@ contract BalancerTripod is Tripod {
         limits[0] = int(balBalance);
         limits[1] = int(auraBalance);
         
-        //IBalancerVault.BatchSwapStep[] memory swaps = BalancerLP.getRewardSwaps(address(this), balBalance, auraBalance);
+        //IBalancerVault.BatchSwapStep[] memory swaps = BalancerLP.getRewardSwaps(balBalance, auraBalance);
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
-            swaps, //BalancerLP.getRewardSwaps(address(this), balBalance, auraBalance), 
-            assets,//BalancerLP.getRewardAssets(address(this)), //assets, 
-            getFundManagement(), 
+            swaps, //BalancerLP.getRewardSwaps(balBalance, auraBalance), 
+            assets,//BalancerLP.getRewardAssets(), //assets, 
+            IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            ), 
             limits, 
             block.timestamp
         );   
@@ -3815,8 +3795,13 @@ contract BalancerTripod is Tripod {
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
-            assets,//BalancerLP.tendAssets(address(this)), 
-            getFundManagement(),//BalancerLP.getFundManagement(address(this)), 
+            assets,//BalancerLP.tendAssets(), 
+            IBalancerVault.FundManagement(
+                address(this),
+                false,
+                payable(address(this)),
+                false
+            ),//BalancerLP.getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -3898,7 +3883,7 @@ contract BalancerTripod is Tripod {
         } else revert();
         toSwapToIndex = newIndex;
     }
-
+/*
     function getFundManagement() 
         internal 
         view 
@@ -3911,7 +3896,7 @@ contract BalancerTripod is Tripod {
                 false
             );
     }
-
+*/
     function maxApprove(address _token, address _contract) internal {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
     }
@@ -3947,5 +3932,79 @@ contract BalancerTripod is Tripod {
         }
         
         tradeFactory = address(0);
+    }
+}
+
+contract BalancerTripodCloner {
+    address public immutable original;
+
+    event Cloned(address indexed clone);
+    event Deployed(address indexed original);
+
+    constructor(
+        address _providerA,
+        address _providerB,
+        address _providerC,
+        address _referenceToken,
+        address _pool,
+        address _rewardsContract
+    ) {
+        BalancerTripod _original = new BalancerTripod(_providerA, _providerB, _providerC, _referenceToken, _pool, _rewardsContract);
+        emit Deployed(address(_original));
+
+        original = address(_original);
+    }
+
+    function name() external pure returns (string memory) {
+        return "Yearn-BalanacerTripodCloner@0.4.3";
+    }
+
+    /*
+     * @notice
+     *  Cloning function to migrate/ deploy to other pools
+     * @param _providerA, provider strategy of tokenA
+     * @param _providerB, provider strategy of tokenB
+     * @param _providerC, provider strrategy of tokenC
+     * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
+     * @param _pool, pool to LP
+     * @param _rewardsContract The Aura rewards contract specific to this LP token
+     * @return newTripod, address of newly deployed tripod
+     */
+    function cloneBalancerTripod(
+        address _providerA,
+        address _providerB,
+        address _providerC,
+        address _referenceToken,
+        address _pool,
+        address _rewardsContract
+    ) external returns (address newTripod) {
+        // Copied from https://github.com/optionality/clone-factory/blob/master/contracts/CloneFactory.sol
+        bytes20 addressBytes = bytes20(original);
+
+        assembly {
+            // EIP-1167 bytecode
+            let clone_code := mload(0x40)
+            mstore(
+                clone_code,
+                0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000
+            )
+            mstore(add(clone_code, 0x14), addressBytes)
+            mstore(
+                add(clone_code, 0x28),
+                0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000
+            )
+            newTripod := create(0, clone_code, 0x37)
+        }
+
+        BalancerTripod(newTripod).initialize(
+            _providerA,
+            _providerB,
+            _providerC,
+            _referenceToken,
+            _pool,
+            _rewardsContract
+        );
+
+        emit Cloned(newTripod);
     }
 }

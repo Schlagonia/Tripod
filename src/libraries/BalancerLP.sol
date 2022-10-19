@@ -49,18 +49,6 @@ library BalancerLP {
     //The main Balancer vault
     IBalancerVault internal constant balancerVault = 
         IBalancerVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
-    //Pools we use for swapping rewards
-    bytes32 internal constant balEthPoolId = 
-        bytes32(0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014);
-    bytes32 internal constant auraEthPoolId = 
-        bytes32(0xc29562b045d80fd77c69bec09541f5c16fe20d9d000200000000000000000251);
-
-    //Base Reward Tokens
-    address internal constant auraToken = 
-        0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF;
-    address internal constant balToken =
-        address(0xba100000625a3754423978a60c9317c58a424e3D);
-
     ICurveFi internal constant curvePool =
         ICurveFi(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
 
@@ -70,12 +58,12 @@ library BalancerLP {
     *       This will not take into account the invested weight so it can be used to determine how in
             or out balance the pool currently is
     */
-    function balanceOfTokensInLP(address _tripod)
+    function balanceOfTokensInLP()
         public
         view
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+        IBalancerTripod tripod = IBalancerTripod(address(this));
         uint256 lpBalance = tripod.totalLpBalance();
      
         if(lpBalance == 0) return (0, 0, 0);
@@ -111,15 +99,15 @@ library BalancerLP {
     }
 
     function quote(
-        address _tripod,
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn
-    ) public view returns (uint256) {
+    ) public view returns(uint256 amountOut) {
         if(_amountIn == 0) {
             return 0;
         }
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+
+        IBalancerTripod tripod = IBalancerTripod(address(this));
 
         require(_tokenTo == tripod.tokenA() || 
                     _tokenTo == tripod.tokenB() || 
@@ -132,17 +120,17 @@ library BalancerLP {
             );
 
             //Get the latest oracle price for bal * amount of bal / (1e8 + (diff of token decimals to bal decimals)) to adjust oracle price that is 1e8
-            return uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
+            amountOut = uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
         } else if(_tokenFrom == tripod.tokenA() || _tokenFrom == tripod.tokenB() || _tokenFrom == tripod.tokenC()){
 
             // Call the quote function in CRV 3pool
-            return curvePool.get_dy(
+            amountOut = curvePool.get_dy(
                 tripod.curveIndex(_tokenFrom), 
                 tripod.curveIndex(_tokenTo), 
                 _amountIn
             );
         } else {
-            return 0;
+            amountOut = 0;
         }
     }
 /*
@@ -190,9 +178,9 @@ library BalancerLP {
             block.timestamp
         );
     }
-*/
-    function getRewardSwaps(address _tripod, uint256 balBalance, uint256 auraBalance) public view returns(IBalancerVault.BatchSwapStep[] memory swaps) {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+*
+    function getRewardSwaps(uint256 balBalance, uint256 auraBalance) public view returns(IBalancerVault.BatchSwapStep[] memory swaps) {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
         swaps = new IBalancerVault.BatchSwapStep[](4);
 
         //Sell bal -> weth
@@ -232,8 +220,8 @@ library BalancerLP {
         );
     }
     
-    function getRewardAssets(address _tripod) public view returns(IAsset[] memory) {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+    function getRewardAssets() public view returns(IAsset[] memory) {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
         IAsset[] memory assets = new IAsset[](4);
         assets[0] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
         assets[1] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
@@ -242,10 +230,10 @@ library BalancerLP {
         return assets;
     }
 
-    function swapRewardTokens(address _tripod) public {
-        IBalancerTripod tripod =IBalancerTripod(_tripod);
-        uint256 balBalance = IERC20(balToken).balanceOf(_tripod);
-        uint256 auraBalance = IERC20(auraToken).balanceOf(_tripod);
+    function swapRewardTokens() public {
+        IBalancerTripod tripod =IBalancerTripod(address(this));
+        uint256 balBalance = IERC20(balToken).balanceOf(address(this));
+        uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
 
         //Cant swap 0
         if(balBalance == 0 || auraBalance == 0) return;
@@ -310,8 +298,8 @@ library BalancerLP {
         );
     }
 
-    function createTendLP(address _tripod) public {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+    function createTendLP() public {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
         IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](2);
         
         IAsset[] memory assets = new IAsset[](3);
@@ -346,8 +334,8 @@ library BalancerLP {
         limits[0] = int(balance);
     }
 
-    function tendAssets(address _tripod) public view returns(IAsset[] memory) {
-        IBalancerTripod tripod = IBalancerTripod(_tripod);
+    function tendAssets() public view returns(IAsset[] memory) {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
   
         IAsset[] memory assets = new IAsset[](3);
 
@@ -360,7 +348,7 @@ library BalancerLP {
         return assets;
     }
 
-    function tendLimits(address _tripod, uint256 balance) public pure returns(int[] memory limits) {
+    function tendLimits(uint256 balance) public pure returns(int[] memory limits) {
         limits = new int[](3);
         limits[0] = int(balance);
         return limits;
@@ -378,6 +366,6 @@ library BalancerLP {
                 payable(_address),
                 false
             );
-    }
+    }*/
     
 }

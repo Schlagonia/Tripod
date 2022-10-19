@@ -24,7 +24,7 @@ contract BalancerTripod is Tripod {
     using SafeCast for int256;
     
     // Used for cloning, will automatically be set to false for other clones
-    bool public isOriginal = true;
+    //bool public isOriginal = true;
 
     //Used for swaps. We default to swap rewards to usdc
     address internal constant usdcAddress =
@@ -176,7 +176,7 @@ contract BalancerTripod is Tripod {
         maxApprove(tokenC, address(curvePool));
     }
 
-    
+    /*
     event Cloned(address indexed clone);
 
     /*
@@ -189,7 +189,7 @@ contract BalancerTripod is Tripod {
      * @param _pool, pool to LP
      * @param _rewardsContract The Aura rewards contract specific to this LP token
      * @return newTripod, address of newly deployed tripod
-     */
+     *
     function cloneBalancerTripod(
         address _providerA,
         address _providerB,
@@ -227,6 +227,7 @@ contract BalancerTripod is Tripod {
 
         emit Cloned(newTripod);
     }
+    */
 
     /*
      * @notice
@@ -303,7 +304,7 @@ contract BalancerTripod is Tripod {
         override
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
-        return BalancerLP.balanceOfTokensInLP(address(this));
+        return BalancerLP.balanceOfTokensInLP();
     }
 
     /*
@@ -534,36 +535,7 @@ contract BalancerTripod is Tripod {
         address _tokenTo,
         uint256 _amountIn
     ) public view override returns (uint256) {
-        //return BalancerLP.quote(address(this), _tokenFrom, _tokenTo, _amountIn);
-        
-        if(_amountIn == 0) {
-            return 0;
-        }
-
-        require(_tokenTo == tokenA || 
-                    _tokenTo == tokenB || 
-                        _tokenTo == tokenC); 
-
-        if(_tokenFrom == balToken) {
-            (, int256 balPrice,,,) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
-                balToken,
-                address(0x0000000000000000000000000000000000000348) // USD
-            );
-
-            //Get the latest oracle price for bal * amount of bal / (1e8 + (diff of token decimals to bal decimals)) to adjust oracle price that is 1e8
-            return uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
-        } else if(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC){
-
-            // Call the quote function in CRV 3pool
-            return curvePool.get_dy(
-                curveIndex[_tokenFrom], 
-                curveIndex[_tokenTo], 
-                _amountIn
-            );
-        } else {
-            return 0;
-        }
-        
+        return BalancerLP.quote(_tokenFrom, _tokenTo, _amountIn);
     }
 
     /*
@@ -573,7 +545,7 @@ contract BalancerTripod is Tripod {
     *   We sell bal/Aura -> WETH -> toSwapTo
     */
     function swapRewardTokens() internal override {
-        //BalancerLP.swapRewardTokens(address(this));
+        //BalancerLP.swapRewardTokens();
         
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
         uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
@@ -630,11 +602,11 @@ contract BalancerTripod is Tripod {
         limits[0] = int(balBalance);
         limits[1] = int(auraBalance);
         
-        //IBalancerVault.BatchSwapStep[] memory swaps = BalancerLP.getRewardSwaps(address(this), balBalance, auraBalance);
+        //IBalancerVault.BatchSwapStep[] memory swaps = BalancerLP.getRewardSwaps(balBalance, auraBalance);
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
-            swaps, //BalancerLP.getRewardSwaps(address(this), balBalance, auraBalance), 
-            assets,//BalancerLP.getRewardAssets(address(this)), //assets, 
+            swaps, //BalancerLP.getRewardSwaps(balBalance, auraBalance), 
+            assets,//BalancerLP.getRewardAssets(), //assets, 
             getFundManagement(), 
             limits, 
             block.timestamp
@@ -765,8 +737,8 @@ contract BalancerTripod is Tripod {
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
-            assets,//BalancerLP.tendAssets(address(this)), 
-            getFundManagement(),//BalancerLP.getFundManagement(address(this)), 
+            assets,//BalancerLP.tendAssets(), 
+            getFundManagement(),//BalancerLP.getFundManagement(), 
             limits, 
             block.timestamp
         );

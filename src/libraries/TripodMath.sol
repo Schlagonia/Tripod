@@ -228,12 +228,11 @@ library TripodMath {
     * @return, the relative weight for each token expressed as 1e18
     */
     function getWeights(
-        address _tripod,
         uint256 investedA,
         uint256 investedB,
         uint256 investedC
     ) public view returns (uint256 wA, uint256 wB, uint256 wC) {
-        ITripod tripod = ITripod(_tripod);
+        ITripod tripod = ITripod(address(this));
         unchecked {
             uint256 adjustedA = getOraclePrice(tripod.tokenA(), investedA);
             uint256 adjustedB = getOraclePrice(tripod.tokenB(), investedB);
@@ -279,12 +278,12 @@ library TripodMath {
      * - rebalancing of tokens to maintain token ratios
      * @return estimated tokenA tokenB and tokenC balances
      */
-    function estimatedTotalAssetsAfterBalance(address _tripod)
+    function estimatedTotalAssetsAfterBalance()
         public
         view
         returns (uint256, uint256, uint256)
     {
-        ITripod tripod = ITripod(_tripod);
+        ITripod tripod = ITripod(address(this));
         // Current status of tokens in LP (includes potential IL)
         (uint256 _aBalance, uint256 _bBalance, uint256 _cBalance) = tripod.balanceOfTokensInLP();
 
@@ -325,7 +324,7 @@ library TripodMath {
                 }
             }
         }
-        return quoteRebalance(address(tripod), _aBalance, _bBalance, _cBalance);
+        return quoteRebalance(_aBalance, _bBalance, _cBalance);
     }
 
     /*
@@ -334,12 +333,11 @@ library TripodMath {
     *    But it works...
     */
     function quoteRebalance(
-        address _tripod,
         uint256 startingA,
         uint256 startingB,
         uint256 startingC
     ) public view returns(uint256, uint256, uint256) {
-        ITripod tripod = ITripod(_tripod);
+        ITripod tripod = ITripod(address(this));
         Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
 
         //We cannot rebalance with a 0 starting position, should only be applicable if called when everything is 0 so just return
@@ -451,7 +449,6 @@ library TripodMath {
         address toSwapTo0, 
         address toSwapTo1
     ) public view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
-        //ITripod tripod = ITripod(_tripod);
         uint256 swapTo0;
         uint256 swapTo1;
 
@@ -511,7 +508,6 @@ library TripodMath {
         address token1Address,
         address toTokenAddress
     ) public view returns(uint256, uint256, uint256) {
-        //ITripod tripod = ITripod(_tripod);
 
         (uint256 toSwapFrom0, uint256 toSwapFrom1) =getNbAndNc(RebalanceInfo(
             0,
@@ -560,9 +556,4 @@ library TripodMath {
         if (delta < maxRelDelta) return true;
     }
 
-    function getAvgRatio(ITripod tripod, uint256 ratioA, uint256 ratioB, uint256 ratioC, Tokens memory tokens) public view returns(uint256) {
-        return (ratioA * tripod.investedWeight(tokens.tokenA) + 
-                    ratioB * tripod.investedWeight(tokens.tokenB) + 
-                        ratioC * tripod.investedWeight(tokens.tokenC)) / RATIO_PRECISION;
-    }
 }

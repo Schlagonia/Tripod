@@ -458,7 +458,6 @@ abstract contract Tripod {
 
         (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
             TripodMath.getWeights(
-                address(this),
                 invested[tokenA], 
                 invested[tokenB], 
                 invested[tokenC]
@@ -740,7 +739,7 @@ abstract contract Tripod {
         view
         returns (uint256, uint256, uint256)
     {
-        return TripodMath.estimatedTotalAssetsAfterBalance(address(this));
+        return TripodMath.estimatedTotalAssetsAfterBalance();
     }
 
     /*
@@ -757,11 +756,11 @@ abstract contract Tripod {
         returns (uint256 _balance)
     {
         if (_provider == address(providerA)) {
-            (_balance, , ) = TripodMath.estimatedTotalAssetsAfterBalance(address(this));
+            (_balance, , ) = TripodMath.estimatedTotalAssetsAfterBalance();
         } else if (_provider == address(providerB)) {
-            (, _balance, ) = TripodMath.estimatedTotalAssetsAfterBalance(address(this));
+            (, _balance, ) = TripodMath.estimatedTotalAssetsAfterBalance();
         } else if (_provider == address(providerC)) {
-            (, , _balance) = TripodMath.estimatedTotalAssetsAfterBalance(address(this));
+            (, , _balance) = TripodMath.estimatedTotalAssetsAfterBalance();
         }
     }
 
