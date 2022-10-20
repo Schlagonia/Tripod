@@ -832,6 +832,72 @@ library TripodMath {
     }
 
     /*
+    * @notice
+    *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
+    *   in comparision to the amounts the started with, i.e. return the same % return
+    */
+    function rebalance() public view returns(uint8, address, address, address){
+        ITripod tripod = ITripod(address(this));
+        Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
+
+        (tokens.ratioA, tokens.ratioB, tokens.ratioC) = getRatios(
+                    tripod.invested(tokens.tokenA),
+                    tripod.balanceOfA(),
+                    tripod.invested(tokens.tokenB),
+                    tripod.balanceOfB(),
+                    tripod.invested(tokens.tokenC),
+                    tripod.balanceOfC()
+                );
+        
+        //If they are all the same or very close we dont need to do anything
+        if(isCloseEnough(tokens.ratioA, tokens.ratioB) && isCloseEnough(tokens.ratioB, tokens.ratioC)) {
+            //Return a 0 for direction to do nothing
+            return(0, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+        }
+        // Calculate the average ratio. Could be at a loss does not matter here
+        uint256 avgRatio;
+        unchecked{
+            avgRatio = (tokens.ratioA * tripod.investedWeight(tokens.tokenA) + 
+                            tokens.ratioB * tripod.investedWeight(tokens.tokenB) + 
+                                tokens.ratioC * tripod.investedWeight(tokens.tokenC)) / 
+                                    RATIO_PRECISION;
+        }
+        //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
+        //If two are higher than the average each has its diff traded to the third
+        //We know all three cannot be above the avg
+        //This flow allows us to keep track of exactly what tokens need to be swapped from and to 
+        //as well as how much with little extra memory/storage used and a max of 3 if() checks
+        if(tokens.ratioA > avgRatio) {
+
+            if (tokens.ratioB > avgRatio) {
+                //Swapping A and B -> C
+                return(2, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+            } else if (tokens.ratioC > avgRatio) {
+                //swapping A and C -> B
+                return(2, tokens.tokenA, tokens.tokenC, tokens.tokenB);
+            } else {
+                //Swapping A -> B and C
+                return(1, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+            }
+            
+        } else if (tokens.ratioB > avgRatio) {
+            //We know A is below avg so we just need to check C
+            if (tokens.ratioC > avgRatio) {
+                //Swap B and C -> A
+                return(2, tokens.tokenB, tokens.tokenC, tokens.tokenA);
+            } else {
+                //swapping B -> C and A
+                return(1, tokens.tokenB, tokens.tokenA, tokens.tokenC);
+            }
+
+        } else {
+            //We know A and B are below so C has to be the only one above the avg
+            //swap C -> A and B
+            return(1, tokens.tokenC, tokens.tokenA, tokens.tokenB);
+        }
+    }
+
+    /*
      * @notice
      *  Function estimating the current assets in the tripod, taking into account:
      * - current balance of tokens in the LP
@@ -1779,6 +1845,14 @@ abstract contract Tripod {
     *   in comparision to the amounts the started with, i.e. return the same % return
     */
     function rebalance() internal {
+        (uint8 direction, address token0, address token1, address token2) = TripodMath.rebalance();
+
+        if(direction == 1) {
+            swapOneToTwo(token0, token1, token2);
+        } else if(direction == 2){
+            swapTwoToOne(token0, token1, token2);
+        }
+        /*
         (uint256 ratioA, uint256 ratioB, uint256 ratioC) = TripodMath.getRatios(
                     invested[tokenA],
                     balanceOfA(),
@@ -1830,6 +1904,7 @@ abstract contract Tripod {
             //swap C -> A and B
             swapOneToTwo(tokenC, tokenA, tokenB);
         }
+        */
     }
 
     /*
@@ -2824,6 +2899,7 @@ library BalancerLP {
             amountOut = 0;
         }
     }
+
 /*
     function tendLpInfo() public returns(IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
         IBalancerTripod tripod = IBalancerTripod(msg.sender);
@@ -2910,17 +2986,17 @@ library BalancerLP {
             abi.encode(0)
         );
     }
-    
-    function getRewardAssets() public view returns(IAsset[] memory) {
+    */
+    function getRewardAssets() public view returns(IAsset[] memory assets) {
         IBalancerTripod tripod = IBalancerTripod(address(this));
-        IAsset[] memory assets = new IAsset[](4);
+        assets = new IAsset[](4);
         assets[0] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
         assets[1] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
         assets[2] = IAsset(tripod.referenceToken());
         assets[3] = IAsset(tripod.poolInfo(tripod.toSwapToIndex()).token);
-        return assets;
+        //return assets;
     }
-
+/*
     function swapRewardTokens() public {
         IBalancerTripod tripod =IBalancerTripod(address(this));
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
@@ -3426,12 +3502,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            ), 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -3499,12 +3570,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            ), 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -3644,7 +3710,8 @@ contract BalancerTripod is Tripod {
         );
 
         //Match the token address with the applicable index from above for this trade
-        IAsset[] memory assets = new IAsset[](4);
+        IAsset[] memory assets = new IAsset[](4);//BalancerLP.getRewardAssets();
+        //assets = BalancerLP.getRewardAssets();
         assets[0] = IAsset(balToken);
         assets[1] = IAsset(auraToken);
         assets[2] = IAsset(referenceToken);
@@ -3659,13 +3726,8 @@ contract BalancerTripod is Tripod {
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, //BalancerLP.getRewardSwaps(balBalance, auraBalance), 
-            assets,//BalancerLP.getRewardAssets(), //assets, 
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            ), 
+            assets, 
+            getFundManagement(), 
             limits, 
             block.timestamp
         );   
@@ -3796,12 +3858,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets,//BalancerLP.tendAssets(), 
-            IBalancerVault.FundManagement(
-                address(this),
-                false,
-                payable(address(this)),
-                false
-            ),//BalancerLP.getFundManagement(), 
+            getFundManagement(),//BalancerLP.getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -3883,7 +3940,7 @@ contract BalancerTripod is Tripod {
         } else revert();
         toSwapToIndex = newIndex;
     }
-/*
+
     function getFundManagement() 
         internal 
         view 
@@ -3896,7 +3953,7 @@ contract BalancerTripod is Tripod {
                 false
             );
     }
-*/
+
     function maxApprove(address _token, address _contract) internal {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
     }

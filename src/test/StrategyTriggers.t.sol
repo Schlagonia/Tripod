@@ -19,7 +19,7 @@ contract StrategyTriggerTest is StrategyFixture {
     function setUp() public override {
         super.setUp();
     }
-
+/*
     function testHarvestTrigger(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaults(_amount);
@@ -187,5 +187,10 @@ contract StrategyTriggerTest is StrategyFixture {
         assertEq(IERC20(cvx).balanceOf(address(tripod)), 0, "CVX balance");
         assertEq(IERC20(crv).balanceOf(address(tripod)), 0, "Curve balance");
         assertGt(tripod.balanceOfStake(), stakedBalance, "Staked bal");
+    }
+*/
+    function tester(uint256 _amount)public {
+        BalancerLP.getRewardSwap();
+        assertTrue(false);
     }
 }

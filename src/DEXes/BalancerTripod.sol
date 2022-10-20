@@ -554,6 +554,8 @@ contract BalancerTripod is Tripod {
         if(balBalance == 0 || auraBalance == 0) return;
 
         IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](4);
+        swaps = BalancerLP.getRewardSwaps(balBalance, auraBalance);
+        /*
         //Sell bal -> weth
         swaps[0] = IBalancerVault.BatchSwapStep(
             balEthPoolId, //bal-eth pool id
@@ -588,10 +590,11 @@ contract BalancerTripod is Tripod {
             3,  //index to use for toSwapTo
             0,
             abi.encode(0)
-        );
+        );*/
 
         //Match the token address with the applicable index from above for this trade
-        IAsset[] memory assets = new IAsset[](4);
+        IAsset[] memory assets = new IAsset[](4);//BalancerLP.getRewardAssets();
+        //assets = BalancerLP.getRewardAssets();
         assets[0] = IAsset(balToken);
         assets[1] = IAsset(auraToken);
         assets[2] = IAsset(referenceToken);
@@ -606,7 +609,7 @@ contract BalancerTripod is Tripod {
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, //BalancerLP.getRewardSwaps(balBalance, auraBalance), 
-            assets,//BalancerLP.getRewardAssets(), //assets, 
+            assets, 
             getFundManagement(), 
             limits, 
             block.timestamp

@@ -4,22 +4,7 @@ pragma experimental ABIEncoderV2;
 
 import {IFeedRegistry} from "../interfaces/IFeedRegistry.sol";
 import "../interfaces/IERC20Extended.sol";
-interface ITripod{
-    function tokenA() external view returns (address);
-    function balanceOfA() external view returns(uint256);
-    function tokenB() external view returns (address);
-    function balanceOfB() external view returns(uint256);
-    function tokenC() external view returns (address);
-    function balanceOfC() external view returns(uint256);
-    function invested(address) external view returns(uint256);
-    function investedWeight(address)external view returns(uint256);
-    function quote(address, address, uint256) external view returns(uint256);
-    function usingReference() external view returns(bool);
-    function referenceToken() external view returns(address);
-    function balanceOfTokensInLP() external view returns(uint256, uint256, uint256);
-    function getRewardTokens() external view returns(address[] memory);
-    function pendingRewards() external view returns(uint256[] memory);
-}
+import {ITripod} from "../interfaces/ITripod.sol";
 
 /// @title Tripod Math
 /// @notice Contains the Rebalancing Logic and Math for the Tripod. Used during both the rebalance and quote rebalance functions
@@ -267,6 +252,72 @@ library TripodMath {
         require(price > 0 && updateTime != 0 && answeredInRound >= roundId);
         //return the dollar amount to 1e8
         return uint256(price) * _amount / (10 ** IERC20Extended(_token).decimals());
+    }
+
+    /*
+    * @notice
+    *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
+    *   in comparision to the amounts the started with, i.e. return the same % return
+    */
+    function rebalance() public view returns(uint8, address, address, address){
+        ITripod tripod = ITripod(address(this));
+        Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
+
+        (tokens.ratioA, tokens.ratioB, tokens.ratioC) = getRatios(
+                    tripod.invested(tokens.tokenA),
+                    tripod.balanceOfA(),
+                    tripod.invested(tokens.tokenB),
+                    tripod.balanceOfB(),
+                    tripod.invested(tokens.tokenC),
+                    tripod.balanceOfC()
+                );
+        
+        //If they are all the same or very close we dont need to do anything
+        if(isCloseEnough(tokens.ratioA, tokens.ratioB) && isCloseEnough(tokens.ratioB, tokens.ratioC)) {
+            //Return a 0 for direction to do nothing
+            return(0, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+        }
+        // Calculate the average ratio. Could be at a loss does not matter here
+        uint256 avgRatio;
+        unchecked{
+            avgRatio = (tokens.ratioA * tripod.investedWeight(tokens.tokenA) + 
+                            tokens.ratioB * tripod.investedWeight(tokens.tokenB) + 
+                                tokens.ratioC * tripod.investedWeight(tokens.tokenC)) / 
+                                    RATIO_PRECISION;
+        }
+        //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
+        //If two are higher than the average each has its diff traded to the third
+        //We know all three cannot be above the avg
+        //This flow allows us to keep track of exactly what tokens need to be swapped from and to 
+        //as well as how much with little extra memory/storage used and a max of 3 if() checks
+        if(tokens.ratioA > avgRatio) {
+
+            if (tokens.ratioB > avgRatio) {
+                //Swapping A and B -> C
+                return(2, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+            } else if (tokens.ratioC > avgRatio) {
+                //swapping A and C -> B
+                return(2, tokens.tokenA, tokens.tokenC, tokens.tokenB);
+            } else {
+                //Swapping A -> B and C
+                return(1, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+            }
+            
+        } else if (tokens.ratioB > avgRatio) {
+            //We know A is below avg so we just need to check C
+            if (tokens.ratioC > avgRatio) {
+                //Swap B and C -> A
+                return(2, tokens.tokenB, tokens.tokenC, tokens.tokenA);
+            } else {
+                //swapping B -> C and A
+                return(1, tokens.tokenB, tokens.tokenA, tokens.tokenC);
+            }
+
+        } else {
+            //We know A and B are below so C has to be the only one above the avg
+            //swap C -> A and B
+            return(1, tokens.tokenC, tokens.tokenA, tokens.tokenB);
+        }
     }
 
     /*

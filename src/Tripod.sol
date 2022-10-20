@@ -567,57 +567,16 @@ abstract contract Tripod {
     *   in comparision to the amounts the started with, i.e. return the same % return
     */
     function rebalance() internal {
-        (uint256 ratioA, uint256 ratioB, uint256 ratioC) = TripodMath.getRatios(
-                    invested[tokenA],
-                    balanceOfA(),
-                    invested[tokenB],
-                    balanceOfB(),
-                    invested[tokenC],
-                    balanceOfC()
-                );
+        (uint8 direction, address token0, address token1, address token2) = TripodMath.rebalance();
+        //If direction == 1 we swap one to two
+        //if direction == 2 we swap two to one
+        //else if its 0 we dont need to swap anything
+        if(direction == 1) {
+            swapOneToTwo(token0, token1, token2);
+        } else if(direction == 2){
+            swapTwoToOne(token0, token1, token2);
+        }
     
-        //If they are all the same or very close we dont need to do anything
-        if(TripodMath.isCloseEnough(ratioA, ratioB) && TripodMath.isCloseEnough(ratioB, ratioC)) return;
-
-        // Calculate the weighted average ratio. Could be at a loss does not matter here
-        uint256 avgRatio;
-        unchecked{
-            avgRatio = (ratioA * investedWeight[tokenA] + ratioB * investedWeight[tokenB] + ratioC * investedWeight[tokenC]) / RATIO_PRECISION;
-        }
-
-        //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
-        //If two are higher than the average each has its diff traded to the third
-        //We know all three cannot be above the avg
-        //This flow allows us to keep track of exactly what tokens need to be swapped from and to 
-        //as well as how much with little extra memory/storage used and a max of 3 if() checks
-        if(ratioA > avgRatio) {
-
-            if (ratioB > avgRatio) {
-                //Swapping A and B -> C
-                swapTwoToOne(tokenA, tokenB, tokenC);
-            } else if (ratioC > avgRatio) {
-                //swapping A and C -> B
-                swapTwoToOne(tokenA, tokenC, tokenB);
-            } else {
-                //Swapping A -> B and C
-                swapOneToTwo(tokenA, tokenB, tokenC);
-            }
-            
-        } else if (ratioB > avgRatio) {
-            //We know A is below avg so we just need to check C
-            if (ratioC > avgRatio) {
-                //Swap B and C -> A
-                swapTwoToOne(tokenB, tokenC, tokenA);
-            } else {
-                //swapping B -> C and A
-                swapOneToTwo(tokenB, tokenA, tokenC);
-            }
-
-        } else {
-            //We know A and B are below so C has to be the only one above the avg
-            //swap C -> A and B
-            swapOneToTwo(tokenC, tokenA, tokenB);
-        }
     }
 
     /*

@@ -8,9 +8,12 @@ import { IAsset } from "../interfaces/Balancer/IAsset.sol";
 import {ICurveFi} from "../interfaces/Curve/IcurveFi.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IFeedRegistry} from "../interfaces/IFeedRegistry.sol";
+import {ITripod} from "../interfaces/ITripod.sol";
 import "../interfaces/IERC20Extended.sol";
 
-interface IBalancerTripod{
+import "forge-std/console.sol";
+
+interface IBalancerTripod is ITripod{
     //Struct for each bb pool that makes up the main pool
     struct PoolInfo {
         address token;
@@ -23,25 +26,7 @@ interface IBalancerTripod{
     function poolId() external view returns(bytes32);
     function toSwapToIndex() external view returns(uint256); 
     function toSwapToPoolId() external view returns(bytes32);
-
     function balToken() external view returns(address);
-
-    function pool() external view returns(address);
-    function tokenA() external view returns (address);
-    function balanceOfA() external view returns(uint256);
-    function tokenB() external view returns (address);
-    function balanceOfB() external view returns(uint256);
-    function tokenC() external view returns (address);
-    function balanceOfC() external view returns(uint256);
-    function invested(address) external view returns(uint256);
-    function totalLpBalance() external view returns(uint256);
-    function investedWeight(address)external view returns(uint256);
-    function quote(address, address, uint256) external view returns(uint256);
-    function usingReference() external view returns(bool);
-    function referenceToken() external view returns(address);
-    function balanceOfTokensInLP() external view returns(uint256, uint256, uint256);
-    function getRewardTokens() external view returns(address[] memory);
-    function pendingRewards() external view returns(uint256[] memory);
 }
 
 library BalancerLP {
@@ -133,6 +118,51 @@ library BalancerLP {
             amountOut = 0;
         }
     }
+
+    function getRewardSwap() public view returns(uint256 _this){
+        console.log("running");
+        return _this;
+    }
+
+    function getRewardSwaps(uint256 balBalance, uint256 auraBalance) public view returns(IBalancerVault.BatchSwapStep[] memory _swaps) {
+        _swaps = new IBalancerVault.BatchSwapStep[](4);
+        bytes32 toSwapToPoolId = IBalancerTripod(address(this)).toSwapToPoolId();
+        _swaps[0] = IBalancerVault.BatchSwapStep(
+            0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014, //bal-eth pool id
+            0,  //Index to use for Bal
+            2,  //index to use for Weth
+            balBalance,
+            abi.encode(0)
+        );
+        
+        //Sell WETH -> toSwapTo token set
+        _swaps[1] = IBalancerVault.BatchSwapStep(
+            toSwapToPoolId,
+            2,  //index to use for Weth
+            3,  //Index to use for toSwapTo
+            0,
+            abi.encode(0)
+        );
+
+        //Sell Aura -> Weth
+        _swaps[2] = IBalancerVault.BatchSwapStep(
+            0xc29562b045d80fd77c69bec09541f5c16fe20d9d000200000000000000000251, //aura eth pool id
+            1,  //Index to use for Aura
+            2,  //index to use for Weth
+            auraBalance,
+            abi.encode(0)
+        );
+
+        //Sell WETH -> toSwapTo
+        _swaps[3] = IBalancerVault.BatchSwapStep(
+            toSwapToPoolId,
+            2,  //index to use for Weth
+            3,  //index to use for toSwapTo
+            0,
+            abi.encode(0)
+        );
+    }
+
 /*
     function tendLpInfo() public returns(IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
         IBalancerTripod tripod = IBalancerTripod(msg.sender);
@@ -219,17 +249,17 @@ library BalancerLP {
             abi.encode(0)
         );
     }
-    
-    function getRewardAssets() public view returns(IAsset[] memory) {
+    */
+    function getRewardAssets() public view returns(IAsset[] memory assets) {
         IBalancerTripod tripod = IBalancerTripod(address(this));
-        IAsset[] memory assets = new IAsset[](4);
+        assets = new IAsset[](4);
         assets[0] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
         assets[1] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
         assets[2] = IAsset(tripod.referenceToken());
         assets[3] = IAsset(tripod.poolInfo(tripod.toSwapToIndex()).token);
-        return assets;
+        //return assets;
     }
-
+/*
     function swapRewardTokens() public {
         IBalancerTripod tripod =IBalancerTripod(address(this));
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
