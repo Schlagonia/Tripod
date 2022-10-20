@@ -588,7 +588,7 @@ library TripodMath {
             toSwapFrom0
         );
 
-        uint256 amountOut2 =tripod. quote(
+        uint256 amountOut2 = tripod. quote(
             token1Address, 
             toTokenAddress, 
             toSwapFrom1
