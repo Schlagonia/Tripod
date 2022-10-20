@@ -21,3 +21,17 @@ interface ITripod{
     function getRewardTokens() external view returns(address[] memory);
     function pendingRewards() external view returns(uint256[] memory);
 }
+
+interface IBalancerTripod is ITripod{
+    //Struct for each bb pool that makes up the main pool
+    struct PoolInfo {
+        address token;
+        address bbPool;
+        bytes32 poolId;
+    }
+    function poolInfo(uint256) external view returns(PoolInfo memory);
+    function curveIndex(address) external view returns(int128);
+    function poolId() external view returns(bytes32);
+    function toSwapToIndex() external view returns(uint256); 
+    function toSwapToPoolId() external view returns(bytes32);
+}

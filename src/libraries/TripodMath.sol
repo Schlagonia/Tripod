@@ -182,8 +182,11 @@ library TripodMath {
      * @notice
      *  Function available publicly estimating the balancing ratios for the tokens in the form:
      * ratio = currentBalance / invested Balance
+     * @param startingA, the invested balance of TokenA
      * @param currentA, current balance of tokenA
+     * @param startingB, the invested balance of TokenB
      * @param currentB, current balance of tokenB
+     * @param startingC, the invested balance of TokenC
      * @param currentC, current balance of tokenC
      * @return _a, _b _c, ratios for tokenA tokenB and tokenC. Will return 0's if there is nothing invested
      */
@@ -258,9 +261,13 @@ library TripodMath {
     * @notice
     *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
     *   in comparision to the amounts the started with, i.e. return the same % return
+    * @return uint that corresponds to what action Tripod should take, 0 means no swaps,
+    *   1 means swap one token to the other two and 2 means swap two to the other one
+    *   The tokens are returned in order of how they should be swapped
     */
     function rebalance() public view returns(uint8, address, address, address){
         ITripod tripod = ITripod(address(this));
+        //We use the tokens struct to hold our variables and avoid stack to deep
         Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
 
         (tokens.ratioA, tokens.ratioB, tokens.ratioC) = getRatios(
@@ -389,6 +396,7 @@ library TripodMath {
         uint256 startingC
     ) public view returns(uint256, uint256, uint256) {
         ITripod tripod = ITripod(address(this));
+        //Use tokens struct to avoid stack to deep error
         Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
 
         //We cannot rebalance with a 0 starting position, should only be applicable if called when everything is 0 so just return

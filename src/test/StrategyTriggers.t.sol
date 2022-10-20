@@ -9,7 +9,6 @@ import {BalancerTripod} from "../DEXes/BalancerTripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {IVault} from "../interfaces/Vault.sol";
-import {BalancerLP} from "../libraries/BalancerLP.sol";
 
 interface IBaseFee {
     function setMaxAcceptableBaseFee(uint256) external;
@@ -19,7 +18,7 @@ contract StrategyTriggerTest is StrategyFixture {
     function setUp() public override {
         super.setUp();
     }
-/*
+
     function testHarvestTrigger(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaults(_amount);
@@ -188,9 +187,5 @@ contract StrategyTriggerTest is StrategyFixture {
         assertEq(IERC20(crv).balanceOf(address(tripod)), 0, "Curve balance");
         assertGt(tripod.balanceOfStake(), stakedBalance, "Staked bal");
     }
-*/
-    function tester(uint256 _amount)public {
-        BalancerLP.getRewardSwap();
-        assertTrue(false);
-    }
+
 }
