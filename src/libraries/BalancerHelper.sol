@@ -111,6 +111,7 @@ library BalancerHelper {
         assets = new IAsset[](7);
         limits = new int[](7);
         bytes32 poolId = tripod.poolId();
+
         //Need two trades for each provider token to create the LP
         //Each trade goes token -> bb-token -> mainPool
         IBalancerTripod.PoolInfo memory _poolInfo;
@@ -157,6 +158,7 @@ library BalancerHelper {
         //Burn a third for each token
         uint256 burnt;
         bytes32 poolId = tripod.poolId();
+
         //Need seperate swaps for each provider token
         //Each swap goes mainPool -> bb-token -> token
         IBalancerTripod.PoolInfo memory _poolInfo;
@@ -203,7 +205,7 @@ library BalancerHelper {
         assets = new IAsset[](4);
         limits = new int[](4);
         
-        bytes32 toSwapToPoolId = IBalancerTripod(address(this)).toSwapToPoolId();
+        bytes32 toSwapToPoolId = tripod.toSwapToPoolId();
         _swaps[0] = IBalancerVault.BatchSwapStep(
             0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014, //bal-eth pool id
             0,  //Index to use for Bal
@@ -239,17 +241,17 @@ library BalancerHelper {
             abi.encode(0)
         );
 
-        assets[0] = IAsset(0xba100000625a3754423978a60c9317c58a424e3D);
-        assets[1] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
-        assets[2] = IAsset(tripod.referenceToken());
-        assets[3] = IAsset(tripod.poolInfo(tripod.toSwapToIndex()).token);
+        assets[0] = IAsset(0xba100000625a3754423978a60c9317c58a424e3D); //bal token
+        assets[1] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF); //Aura token
+        assets[2] = IAsset(tripod.referenceToken()); //weth
+        assets[3] = IAsset(tripod.poolInfo(tripod.toSwapToIndex()).token); //to Swap to token
 
         limits[0] = int(balBalance);
         limits[1] = int(auraBalance);
     }
 
     function getTendVariables(
-        IBalancerTripod.PoolInfo memory _poolInfo, 
+        IBalancerTripod.PoolInfo memory _poolInfo,
         uint256 balance
     ) public view returns(IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
         IBalancerTripod tripod = IBalancerTripod(address(this));

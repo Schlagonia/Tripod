@@ -7,7 +7,7 @@ import "../interfaces/IERC20Extended.sol";
 import {ITripod} from "../interfaces/ITripod.sol";
 
 /// @title Tripod Math
-/// @notice Contains the Rebalancing Logic and Math for the Tripod. Used during both the rebalance and quote rebalance functions
+/// @notice Contains the Rebalancing Logic and Math for the Tripod Base. Used during both the rebalance and quote rebalance functions
 library TripodMath {
 
     /*
@@ -261,13 +261,13 @@ library TripodMath {
     * @notice
     *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
     *   in comparision to the amounts the started with, i.e. return the same % return
-    * @return uint that corresponds to what action Tripod should take, 0 means no swaps,
+    * @return uint8 that corresponds to what action Tripod should take, 0 means no swaps,
     *   1 means swap one token to the other two and 2 means swap two to the other one
     *   The tokens are returned in order of how they should be swapped
     */
     function rebalance() public view returns(uint8, address, address, address){
         ITripod tripod = ITripod(address(this));
-        //We use the tokens struct to hold our variables and avoid stack to deep
+        //We use the tokens struct to cache our variables and avoid stack to deep
         Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
 
         (tokens.ratioA, tokens.ratioB, tokens.ratioC) = getRatios(
@@ -352,7 +352,7 @@ library TripodMath {
             _cBalance += tripod.balanceOfC();
         }
 
-        // Include rewards (swapping them if not tokenA or tokenB)
+        // Include rewards (swapping them if not one of the LP tokens)
         uint256[] memory _rewardsPending = tripod.pendingRewards();
         address[] memory _rewardTokens = tripod.getRewardTokens();
         address reward;
@@ -495,6 +495,7 @@ library TripodMath {
      *  This will quote swapping the extra tokens from the one that has returned the highest amount to the other two
      *  in relation to what they need attempting to make everything as equal as possible
      *  will return the absolute changes expected for each token, accounting will take place in parent function
+     * @param tripod, the instance of the tripod to use
      * @param info, struct of all needed info OF token addresses and amounts
      * @param toSwapToken, the token we will be swapping from to the other two
      * @param token0Address, address of one of the tokens we are swapping to
@@ -507,7 +508,7 @@ library TripodMath {
         address toSwapFrom, 
         address toSwapTo0, 
         address toSwapTo1
-    ) public view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
+    ) internal view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
         uint256 swapTo0;
         uint256 swapTo1;
 
@@ -554,6 +555,7 @@ library TripodMath {
      *  This will swap the extra tokens from the two that returned raios higher than target return to the other one
      *  in relation to what they gained attempting to make everything as equal as possible
      *  will return the absolute changes expected for each token, accounting will take place in parent function
+     * @param tripod, the instance of the tripod to use
      * @param info, struct of all needed info OF token addresses and amounts
      * @param token0Address, address of one of the tokens we are swapping from
      * @param token1Address, address of the second token we are swapping from
@@ -566,7 +568,7 @@ library TripodMath {
         address token0Address,
         address token1Address,
         address toTokenAddress
-    ) public view returns(uint256, uint256, uint256) {
+    ) internal view returns(uint256, uint256, uint256) {
 
         (uint256 toSwapFrom0, uint256 toSwapFrom1) =getNbAndNc(RebalanceInfo(
             0,

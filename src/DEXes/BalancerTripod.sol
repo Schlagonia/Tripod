@@ -52,7 +52,7 @@ contract BalancerTripod is Tripod {
         bytes32(0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a);
     //The pool Id for the pool we will swap eth through to a provider token
     bytes32 public toSwapToPoolId;
-    //Index of the token we are currently swapping to from eth
+    //Index of the token for the poolInfo array we are currently swapping to from eth
     uint256 public toSwapToIndex;
     //The main Balancer Pool Id
     bytes32 public poolId;
@@ -121,7 +121,7 @@ contract BalancerTripod is Tripod {
 
     /*
      * @notice
-     *  Initialize CurveTripod specifics
+     *  Initialize BalancerTripod specifics
      * @param _rewardsContract, The Aura rewards contract specific to this LP token
      */
     function _initializeBalancerTripod(address _rewardsContract) internal {
@@ -138,7 +138,7 @@ contract BalancerTripod is Tripod {
         //If USDC was not set as Token A we will need to set the index after deployment
         toSwapToPoolId = ethUsdcPoolId;
 
-        //Set array and mapping of pool Infos's for each token
+        //Set array of pool Infos's for each token
         setBalancerPoolInfos();
 
         //Set mapping of curve index's
@@ -449,7 +449,6 @@ contract BalancerTripod is Tripod {
                     address(_pool),
                     _pool.getPoolId()
                 );
-            //poolInfoMapping[_token] = _poolInfo;
 
             if(_token == tokenA) {
                 poolInfo[0] = _poolInfo;
@@ -480,7 +479,7 @@ contract BalancerTripod is Tripod {
      * @notice
      *  Function used by governance to swap tokens manually if needed, can be used when closing 
      * the LP position manually and need some re-balancing before sending funds back to the 
-     * providers
+     * providers. Should mainly be used for provider tokens but can be used for bal and aura if need be.
      * @param tokenFrom, address of token we are swapping from
      * @param tokenTo, address of token we are swapping to
      * @param swapInAmount, amount of swapPath[0] to swap for swapPath[1]

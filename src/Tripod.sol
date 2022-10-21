@@ -105,7 +105,7 @@ interface IBaseFee {
 /// @notice This is the base contract for a 3 token joint LP strategy to be used with @Yearn vaults
 ///     The contract takes tokens from 3 seperate Provider strategies each with a different token that corresponds to one of the tokens that
 ///     makes up the LP of "pool". Each harvest the Tripod will attempt to rebalance each token into an equal relative return percentage wise
-///     irrespecative of the begining weights, exchange rates or decimal differences. 
+///     irrespective of the begining weights, exchange rates or decimal differences. 
 ///
 ///     Made by Schlagania https://github.com/Schlagonia/Tripod adapted from the 2 token joint strategy https://github.com/fp-crypto/joint-strategy
 ///
@@ -141,7 +141,7 @@ abstract contract Tripod {
 
     //Mapping of the Amounts that actually go into the LP position
     mapping(address => uint256) public invested;
-    //Mapping og the weights of each token when it goes in to 1e18
+    //Mapping of the weights of each token that was invested to 1e18, .33e18 == 33%
     mapping(address => uint256) public investedWeight;
 
     //Address of the Keeper for this strategy
@@ -338,11 +338,7 @@ abstract contract Tripod {
         if (launchHarvest) {
             launchHarvest = false;
         }
-        // Check if it needs to stop starting new epochs after finishing this one.
-        // _autoProtect is implemented in children
-        //if (_autoProtect() && !autoProtectionDisabled) {
-        //    dontInvestWant = true;
-        //}
+
     	//Exits all positions into equal amounts
         _closeAllPositions();
 
@@ -449,12 +445,8 @@ abstract contract Tripod {
         ); // don't create LP if we are already invested
 
         // Open the LP position
-        (uint256 amountA, uint256 amountB, uint256 amountC) = createLP();
-
         // Set invested amounts
-        invested[tokenA] = amountA;
-        invested[tokenB] = amountB;
-        invested[tokenC] = amountC;
+        (invested[tokenA], invested[tokenB], invested[tokenC]) = createLP();
 
         (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
             TripodMath.getWeights(
@@ -576,7 +568,6 @@ abstract contract Tripod {
         } else if(direction == 2){
             swapTwoToOne(token0, token1, token2);
         }
-    
     }
 
     /*
