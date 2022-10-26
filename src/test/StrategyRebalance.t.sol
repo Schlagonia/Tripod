@@ -11,6 +11,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 import {IVault} from "../interfaces/Vault.sol";
+import {TripodMath} from "../libraries/TripodMath.sol";
 
 contract RebalanceTest is StrategyFixture {
     using SafeERC20 for IERC20;
@@ -37,9 +38,12 @@ contract RebalanceTest is StrategyFixture {
         uint256 bProfit = assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault));
         uint256 cProfit = assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault));
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             aProfit + deposited[0],
+            tripod.invested(tripod.tokenB()),
             bProfit + deposited[1],
+            tripod.invested(tripod.tokenC()),
             cProfit + deposited[2]
         );
         console.log("A ratio ", aRatio, " profit was ", aProfit);
@@ -78,9 +82,12 @@ contract RebalanceTest is StrategyFixture {
         uint256 bProfit = assetFixtures[1].want.balanceOf(address(assetFixtures[1].vault));
         uint256 cProfit = assetFixtures[2].want.balanceOf(address(assetFixtures[2].vault));
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             aProfit + deposited[0],
+            tripod.invested(tripod.tokenB()),
             bProfit + deposited[1],
+            tripod.invested(tripod.tokenC()),
             cProfit + deposited[2]
         );
         console.log("A ratio ", aRatio, " profit was ", aProfit);
@@ -100,9 +107,12 @@ contract RebalanceTest is StrategyFixture {
 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -117,9 +127,12 @@ contract RebalanceTest is StrategyFixture {
 
         ( _a,  _b,  _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        (uint256 aRatio2, uint256 bRatio2, uint256 cRatio2) = tripod.getRatios(
+        (uint256 aRatio2, uint256 bRatio2, uint256 cRatio2) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -139,9 +152,12 @@ contract RebalanceTest is StrategyFixture {
 
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256 bRatio, uint256 cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -156,9 +172,12 @@ contract RebalanceTest is StrategyFixture {
 
         ( _a,  _b,  _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        ( aRatio,  bRatio,  cRatio) = tripod.getRatios(
+        ( aRatio,  bRatio,  cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -182,9 +201,12 @@ contract RebalanceTest is StrategyFixture {
 
         (uint256 _a, uint256  _b, uint256  _c) = tripod.estimatedTotalAssetsAfterBalance();
 
-        (uint256 aRatio, uint256  bRatio, uint256  cRatio) = tripod.getRatios(
+        (uint256 aRatio, uint256  bRatio, uint256  cRatio) = TripodMath.getRatios(
+            tripod.invested(tripod.tokenA()),
             _a,
+            tripod.invested(tripod.tokenB()),
             _b,
+            tripod.invested(tripod.tokenC()),
             _c
         );
 
@@ -234,33 +256,34 @@ contract RebalanceTest is StrategyFixture {
         depositAllVaultsAndHarvest(_amount);
 
         //Should be true if they are equal
-        bool closeEnough = tripod.isCloseEnough(1e18, 1e18);
+        bool closeEnough = TripodMath.isCloseEnough(1e18, 1e18);
         assertTrue(closeEnough, "even");
         //should be false if 90% off
-        closeEnough = tripod.isCloseEnough(1e18, 1e17);
+        closeEnough = TripodMath.isCloseEnough(1e18, 1e17);
         assertTrue(!closeEnough, "90%");
         //Should be false if the are 10% off
-        closeEnough = tripod.isCloseEnough(11e17, 1e18);
+        closeEnough = TripodMath.isCloseEnough(11e17, 1e18);
         assertTrue(!closeEnough, "10%");
         //should still be false at .1% off since it is < not  <=
-        closeEnough = tripod.isCloseEnough(1e18, 1e18 * 999 / 1_000);
+        closeEnough = TripodMath.isCloseEnough(1e18, 1e18 * 999 / 1_000);
         assertTrue(!closeEnough, ".1%");
         //Should be false if just under .1% since its based on the second input
-        closeEnough = tripod.isCloseEnough(1e18, 1e18 * 9_999 / 10_000 + 1);
+        closeEnough = TripodMath.isCloseEnough(1e18, 1e18 * 9_999 / 10_000 + 1);
         assertTrue(!closeEnough, ".1% + 1");
         //should still be false at .1% off since it is < not  <=
-        closeEnough = tripod.isCloseEnough(1e18 * 9_999 / 10_000, 1e18);
+        closeEnough = TripodMath.isCloseEnough(1e18 * 9_999 / 10_000, 1e18);
         assertTrue(!closeEnough, ".1% #2");
         //Should be true if just uner .1%
-        closeEnough = tripod.isCloseEnough(1e18 * 9_999 / 10_000 + 1, 1e18);
+        closeEnough = TripodMath.isCloseEnough(1e18 * 9_999 / 10_000 + 1, 1e18);
         assertTrue(closeEnough, ".1% + 1 #2");
         //Should be true if both 0
-        closeEnough = tripod.isCloseEnough(0, 0);
+        closeEnough = TripodMath.isCloseEnough(0, 0);
         assertTrue(closeEnough, "0's");
         //should be fale if only one is 0
-        closeEnough = tripod.isCloseEnough(1e18, 0);
+        closeEnough = TripodMath.isCloseEnough(1e18, 0);
         assertTrue(!closeEnough, "b=0");
-        closeEnough = tripod.isCloseEnough(0, 1e18);
+        closeEnough = TripodMath.isCloseEnough(0, 1e18);
         assertTrue(!closeEnough, "a=0");
     }
+    
 }

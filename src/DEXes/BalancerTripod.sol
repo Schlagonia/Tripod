@@ -3,27 +3,24 @@ pragma solidity ^0.8.12;
 pragma experimental ABIEncoderV2;
 
 // Import necessary libraries and interfaces:
-// NoHedgetripod to inherit from
-//import "../Hedges/NoHedgeTripod.sol";
 import "../Tripod.sol";
 import { IBalancerVault } from "../interfaces/Balancer/IBalancerVault.sol";
 import { IBalancerPool } from "../interfaces/Balancer/IBalancerPool.sol";
 import { IAsset } from "../interfaces/Balancer/IAsset.sol";
 import {IConvexDeposit} from "../interfaces/Convex/IConvexDeposit.sol";
 import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
-import {ICurveFi} from "../interfaces/Curve/IcurveFi.sol";
+import {ICurveFi} from "../interfaces/Curve/ICurveFi.sol";
 import {ITradeFactory} from "../interfaces/ySwaps/ITradeFactory.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
+import {IBalancerTripod} from "../interfaces/ITripod.sol";
+import {BalancerHelper} from "../libraries/BalancerHelper.sol";
 
 contract BalancerTripod is Tripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using SafeCast for int256;
     
-    // Used for cloning, will automatically be set to false for other clones
-    bool public isOriginal = true;
-
     //Used for swaps. We default to swap rewards to usdc
     address internal constant usdcAddress =
         0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
@@ -37,40 +34,28 @@ contract BalancerTripod is Tripod {
     ICurveFi internal constant curvePool =
         ICurveFi(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
     //Index mapping provider token to its crv index 
-    mapping (address => int128) internal curveIndex;
+    mapping (address => int128) public curveIndex;
 
     /***
         Balancer specific variables
     ***/
-    //Struct for each bb pool that makes up the main pool
-    struct PoolInfo {
-        address token;
-        address bbPool;
-        bytes32 poolId;
-    }
     //Array of all 3 provider tokens structs
-    PoolInfo[3] internal poolInfo;
-    //Mapping of provider token to PoolInfo struct
-    mapping(address => PoolInfo) internal poolInfoMapping;
-    
+    IBalancerTripod.PoolInfo[3] public poolInfo;
+
     //The main Balancer vault
     IBalancerVault internal constant balancerVault = 
         IBalancerVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
     //Pools we use for swapping rewards
-    bytes32 internal constant balEthPoolId = 
-        bytes32(0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014);
-    bytes32 internal constant auraEthPoolId = 
-        bytes32(0xc29562b045d80fd77c69bec09541f5c16fe20d9d000200000000000000000251);
     bytes32 internal constant ethUsdcPoolId =
         bytes32(0x96646936b91d6b9d7d0c47c496afbf3d6ec7b6f8000200000000000000000019);
     bytes32 internal constant ethDaiPoolId = 
         bytes32(0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a);
     //The pool Id for the pool we will swap eth through to a provider token
-    bytes32 internal toSwapToPoolId;
-    //Address of the token we are currently swapping to from eth
-    address public toSwapTo;
+    bytes32 public toSwapToPoolId;
+    //Index of the token for the poolInfo array we are currently swapping to from eth
+    uint256 public toSwapToIndex;
     //The main Balancer Pool Id
-    bytes32 internal poolId;
+    bytes32 public poolId;
 
     /***
         Aura specific variables for staking
@@ -136,7 +121,7 @@ contract BalancerTripod is Tripod {
 
     /*
      * @notice
-     *  Initialize CurveTripod specifics
+     *  Initialize BalancerTripod specifics
      * @param _rewardsContract, The Aura rewards contract specific to this LP token
      */
     function _initializeBalancerTripod(address _rewardsContract) internal {
@@ -148,20 +133,20 @@ contract BalancerTripod is Tripod {
 
         //Main balancer PoolId
         poolId = IBalancerPool(pool).getPoolId();
-        //Default to use usdc for the token to swap to
-        toSwapTo = usdcAddress;
-        //Default to usdcEth pool ID
+
+        //Default to usdcEth pool ID.
+        //If USDC was not set as Token A we will need to set the index after deployment
         toSwapToPoolId = ethUsdcPoolId;
 
-        // The reward tokens are the tokens provided to the pool
-        //This will update them based on current rewards on Aura
-        _updateRewardTokens();
-
-        //Set array and mapping of pool Infos's for each token
+        //Set array of pool Infos's for each token
         setBalancerPoolInfos();
 
         //Set mapping of curve index's
         setCRVPoolIndexs();
+
+        // The reward tokens are the tokens provided to the pool
+        //This will update them based on current rewards on Aura
+        _updateRewardTokens();
 
         maxApprove(tokenA, address(balancerVault));
         maxApprove(tokenB, address(balancerVault));
@@ -174,70 +159,18 @@ contract BalancerTripod is Tripod {
         maxApprove(tokenC, address(curvePool));
     }
 
-    event Cloned(address indexed clone);
-
     /*
      * @notice
-     *  Cloning function to migrate/ deploy to other pools
-     * @param _providerA, provider strategy of tokenA
-     * @param _providerB, provider strategy of tokenB
-     * @param _providerC, provider strrategy of tokenC
-     * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
-     * @param _pool, pool to LP
-     * @param _rewardsContract The Aura rewards contract specific to this LP token
-     * @return newTripod, address of newly deployed tripod
-     */
-    function cloneBalancerTripod(
-        address _providerA,
-        address _providerB,
-        address _providerC,
-        address _referenceToken,
-        address _pool,
-        address _rewardsContract
-    ) external returns (address newTripod) {
-        require(isOriginal);
-        bytes20 addressBytes = bytes20(address(this));
-
-        assembly {
-            // EIP-1167 bytecode
-            let clone_code := mload(0x40)
-            mstore(
-                clone_code,
-                0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000
-            )
-            mstore(add(clone_code, 0x14), addressBytes)
-            mstore(
-                add(clone_code, 0x28),
-                0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000
-            )
-            newTripod := create(0, clone_code, 0x37)
-        }
-
-        BalancerTripod(newTripod).initialize(
-            _providerA,
-            _providerB,
-            _providerC,
-            _referenceToken,
-            _pool,
-            _rewardsContract
-        );
-
-        emit Cloned(newTripod);
-    }
-
-    /*
-     * @notice
-     *  Function returning the name of the tripod in the format "NoHedgeBalancerTripod(CurveTokenSymbol)"
+     *  Function returning the name of the tripod in the format "BalancerTripod(TokenSymbol)"
      * @return name of the strategy
      */
     function name() external view override returns (string memory) {
-        string memory symbol = string(
+
+        return string(abi.encodePacked("NoHedgeBalancerTripod(", string(
             abi.encodePacked(
                 IERC20Extended(pool).symbol()
             )
-        );
-
-        return string(abi.encodePacked("NoHedgeBalancerTripod(", symbol, ")"));
+        ), ")"));
     }
 
     /*
@@ -266,7 +199,7 @@ contract BalancerTripod is Tripod {
             //We will use the trade factory for any extra rewards
             if(tradeFactory != address(0)) {
                 _checkAllowance(tradeFactory, IERC20(_rewardsToken), type(uint256).max);
-                ITradeFactory(tradeFactory).enable(_rewardsToken, toSwapTo);
+                ITradeFactory(tradeFactory).enable(_rewardsToken, poolInfo[toSwapToIndex].token);
             }
         }
     }
@@ -301,38 +234,7 @@ contract BalancerTripod is Tripod {
         override
         returns (uint256 _balanceA, uint256 _balanceB, uint256 _balanceC) 
     {
-        uint256 lpBalance = totalLpBalance();
-     
-        if(lpBalance == 0) return (0, 0, 0);
-
-        //Get the total tokens in the lp and the relative portion for each provider token
-        uint256 total;
-        (IERC20[] memory tokens, uint256[] memory balances, ) = balancerVault.getPoolTokens(poolId);
-        for(uint256 i; i < tokens.length; ++i) {
-            address token = address(tokens[i]);
-   
-            if(token == pool) continue;
-            uint256 balance = balances[i];
-     
-            if(token == poolInfoMapping[tokenA].bbPool) {
-                _balanceA = balance;
-            } else if(token == poolInfoMapping[tokenB].bbPool) {
-                _balanceB = balance;
-            } else if(token == poolInfoMapping[tokenC].bbPool){
-                _balanceC = balance;
-            }
-
-            total += balance;
-        }
-
-        unchecked {
-            uint256 lpDollarValue = lpBalance * IBalancerPool(pool).getRate() / 1e18;
-
-            //Adjust for decimals and pool balance
-            _balanceA = (lpDollarValue * _balanceA) / (total * (10 ** (18 - IERC20Extended(tokenA).decimals())));
-            _balanceB = (lpDollarValue * _balanceB) / (total * (10 ** (18 - IERC20Extended(tokenB).decimals())));
-            _balanceC = (lpDollarValue * _balanceC) / (total * (10 ** (18 - IERC20Extended(tokenC).decimals())));
-        }
+        return BalancerHelper.balanceOfTokensInLP();
     }
 
     /*
@@ -368,45 +270,12 @@ contract BalancerTripod is Tripod {
      * @return the amounts actually invested for each token
      */
     function createLP() internal override returns (uint256, uint256, uint256) {
-        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](6);
-        IAsset[] memory assets = new IAsset[](7);
-        int[] memory limits = new int[](7);
+    
+        (IBalancerVault.BatchSwapStep[] memory swaps, 
+            IAsset[] memory assets, 
+                int[] memory limits) = 
+                    BalancerHelper.getCreateLPVariables();
 
-        //Need two trades for each provider token to create the LP
-        //Each trade goes token -> bb-token -> mainPool
-        PoolInfo memory _poolInfo;
-        for (uint256 i; i < 3; ++i) {
-            _poolInfo = poolInfo[i];
-            address token = _poolInfo.token;
-            uint256 balance = IERC20(token).balanceOf(address(this));
-            //Used to offset the array to the correct index
-            uint256 j = i * 2;
-            //Swap fromt token -> bb-token
-            swaps[j] = IBalancerVault.BatchSwapStep(
-                _poolInfo.poolId,
-                j,  //index for token
-                j + 1,  //index for bb-token
-                balance,
-                abi.encode(0)
-            );
-
-            //swap from bb-token -> main pool
-            swaps[j+1] = IBalancerVault.BatchSwapStep(
-                poolId,
-                j + 1,  //index for bb-token
-                6,  //index for main pool
-                0,
-                abi.encode(0)
-            );
-
-            //Match the index used with the correct address and balance
-            assets[j] = IAsset(token);
-            assets[j+1] = IAsset(_poolInfo.bbPool);
-            limits[j] = int(balance);
-        }
-        //Set the main lp token as the last in the array
-        assets[6] = IAsset(pool);
-        
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
@@ -434,46 +303,11 @@ contract BalancerTripod is Tripod {
     function burnLP(
         uint256 _amount
     ) internal override {
-        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](6);
-        IAsset[] memory assets = new IAsset[](7);
-        int[] memory limits = new int[](7);
-        //Burn a third for each token
-        uint256 burnt;
 
-        //Need seperate swaps for each provider token
-        //Each swap goes mainPool -> bb-token -> token
-        PoolInfo memory _poolInfo;
-        for (uint256 i; i < 3; ++i) {
-            _poolInfo = poolInfo[i];
-            uint256 weightedToBurn = _amount * investedWeight[_poolInfo.token] / RATIO_PRECISION;
-            uint256 j = i * 2;
-            //Swap from main pool -> bb-token
-            swaps[j] = IBalancerVault.BatchSwapStep(
-                poolId,
-                6,  //Index used for main pool
-                j,  //Index for bb-token pool
-                i == 2 ? _amount - burnt : weightedToBurn, //To make sure we burn all of the LP
-                abi.encode(0)
-            );
-
-            //swap from bb-token -> token
-            swaps[j+1] = IBalancerVault.BatchSwapStep(
-                _poolInfo.poolId,
-                j,  //Index used for bb-token pool
-                j + 1,  //Index used for token
-                0,
-                abi.encode(0)
-            );
-
-            //adjust the already burnt LP amount
-            burnt += weightedToBurn;
-            //Match the index used with the applicable address
-            assets[j] = IAsset(_poolInfo.bbPool);
-            assets[j+1] = IAsset(_poolInfo.token);
-        }
-        //Set the lp token as asset 6
-        assets[6] = IAsset(pool);
-        limits[6] = int(_amount);
+        (IBalancerVault.BatchSwapStep[] memory swaps, 
+            IAsset[] memory assets, 
+                int[] memory limits) = 
+                    BalancerHelper.getBurnLPVariables(_amount);
 
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
@@ -562,34 +396,8 @@ contract BalancerTripod is Tripod {
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn
-    ) internal view override returns (uint256) {
-        if(_amountIn == 0) {
-            return 0;
-        }
-
-        require(_tokenTo == tokenA || 
-                    _tokenTo == tokenB || 
-                        _tokenTo == tokenC); 
-
-        if(_tokenFrom == balToken) {
-            (, int256 balPrice,,,) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
-                balToken,
-                address(0x0000000000000000000000000000000000000348) // USD
-            );
-
-            //Get the latest oracle price for bal * amount of bal / (1e8 + (diff of token decimals to bal decimals)) to adjust oracle price that is 1e8
-            return uint256(balPrice) * _amountIn / (10 ** (8 + (18 - IERC20Extended(_tokenTo).decimals())));
-        } else if(_tokenFrom == tokenA || _tokenFrom == tokenB || _tokenFrom == tokenC){
-
-            // Call the quote function in CRV 3pool
-            return curvePool.get_dy(
-                curveIndex[_tokenFrom], 
-                curveIndex[_tokenTo], 
-                _amountIn
-            );
-        } else {
-            return 0;
-        }
+    ) public view override returns (uint256) {
+        return BalancerHelper.quote(_tokenFrom, _tokenTo, _amountIn);
     }
 
     /*
@@ -599,70 +407,25 @@ contract BalancerTripod is Tripod {
     *   We sell bal/Aura -> WETH -> toSwapTo
     */
     function swapRewardTokens() internal override {
-        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](4);
-        
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
         uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
 
         //Cant swap 0
         if(balBalance == 0 || auraBalance == 0) return;
 
-        //Sell bal -> weth
-        swaps[0] = IBalancerVault.BatchSwapStep(
-            balEthPoolId,
-            0,  //Index to use for Bal
-            2,  //index to use for Weth
-            balBalance,
-            abi.encode(0)
-        );
-        
-        //Sell WETH -> toSwapTo token set
-        swaps[1] = IBalancerVault.BatchSwapStep(
-            toSwapToPoolId,
-            2,  //index to use for Weth
-            3,  //Index to use for toSwapTo
-            0,
-            abi.encode(0)
-        );
+        (IBalancerVault.BatchSwapStep[] memory swaps,
+            IAsset[] memory assets, 
+                int[] memory limits) = 
+                    BalancerHelper.getRewardVariables(balBalance, auraBalance);
 
-        //Sell Aura -> Weth
-        swaps[2] = IBalancerVault.BatchSwapStep(
-            auraEthPoolId,
-            1,  //Index to use for Aura
-            2,  //index to use for Weth
-            auraBalance,
-            abi.encode(0)
-        );
-
-        //Sell WETH -> toSwapTo
-        swaps[3] = IBalancerVault.BatchSwapStep(
-            toSwapToPoolId,
-            2,  //index to use for Weth
-            3,  //index to use for toSwapTo
-            0,
-            abi.encode(0)
-        );
-
-        //Match the token address with the applicable index from above for this trade
-        IAsset[] memory assets = new IAsset[](4);
-        assets[0] = IAsset(balToken);
-        assets[1] = IAsset(auraToken);
-        assets[2] = IAsset(referenceToken);
-        assets[3] = IAsset(toSwapTo);
-        
-        //Only min we need to set is for the balances going in, match with their index
-        int[] memory limits = new int[](4);
-        limits[0] = int(balBalance);
-        limits[1] = int(auraBalance);
-            
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
-            swaps, 
-            assets, 
+            swaps,
+            assets,
             getFundManagement(), 
             limits, 
             block.timestamp
-        );
+        );   
     }
 
     /*
@@ -673,7 +436,7 @@ contract BalancerTripod is Tripod {
     */
     function setBalancerPoolInfos() internal {
         (IERC20[] memory _tokens, , ) = balancerVault.getPoolTokens(poolId);
-        PoolInfo memory _poolInfo;
+        IBalancerTripod.PoolInfo memory _poolInfo;
         for(uint256 i; i < _tokens.length; ++i) {
             IBalancerPool _pool = IBalancerPool(address(_tokens[i]));
             
@@ -681,12 +444,11 @@ contract BalancerTripod is Tripod {
             if(pool == address(_pool)) continue;
             
             address _token = _pool.getMainToken();
-            _poolInfo = PoolInfo(
+            _poolInfo = IBalancerTripod.PoolInfo(
                     _token,
                     address(_pool),
                     _pool.getPoolId()
                 );
-            poolInfoMapping[_token] = _poolInfo;
 
             if(_token == tokenA) {
                 poolInfo[0] = _poolInfo;
@@ -714,67 +476,10 @@ contract BalancerTripod is Tripod {
     }
 
     /*
-    * Will swap specifc reward token to toSwapTo
-    */
-    function swapReward(
-        address _from, 
-        address /*_to*/, 
-        uint256 _amountIn, 
-        uint256 _minOut
-    ) internal override returns (uint256) {
-        /*
-        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](2);
-        uint256 balBefore = IERC20(toSwapTo).balanceOf(address(this));
-
-        bytes32 _poolId = _from == balToken ? balEthPoolId : auraEthPoolId;
-        //Sell reward -> weth
-        swaps[0] = IBalancerVault.BatchSwapStep(
-            _poolId,
-            0,  //Index to use for the reward we are selling
-            1,  //Index to use for WETH
-            _amountIn,
-            abi.encode(0)
-        );
-        
-        //Sell WETH -> toSwapTo due to higher liquidity
-        swaps[1] = IBalancerVault.BatchSwapStep(
-            toSwapToPoolId,
-            1,  //Index to use for WETH
-            2,  //Index to use for toSwapTo
-            0,
-            abi.encode(0)
-        );
-
-        //Match the token address with the desired index for this trade
-        IAsset[] memory assets = new IAsset[](3);
-        assets[0] = IAsset(_from);
-        assets[1] = IAsset(referenceToken);
-        assets[2] = IAsset(toSwapTo);
-
-        //Only min we need to set is for the balance going in
-        int[] memory limits = new int[](3);
-        limits[0] = int(_amountIn);
-
-        balancerVault.batchSwap(
-            IBalancerVault.SwapKind.GIVEN_IN, 
-            swaps, 
-            assets, 
-            getFundManagement(), 
-            limits, 
-            block.timestamp
-        );
-
-        uint256 diff = IERC20(toSwapTo).balanceOf(address(this)) - balBefore;
-        require(diff >= _minOut);
-        return diff;
-        */
-    }
-
-    /*
      * @notice
      *  Function used by governance to swap tokens manually if needed, can be used when closing 
      * the LP position manually and need some re-balancing before sending funds back to the 
-     * providers
+     * providers. Should mainly be used for provider tokens but can be used for bal and aura if need be.
      * @param tokenFrom, address of token we are swapping from
      * @param tokenTo, address of token we are swapping to
      * @param swapInAmount, amount of swapPath[0] to swap for swapPath[1]
@@ -789,8 +494,7 @@ contract BalancerTripod is Tripod {
         uint256 minOutAmount,
         bool core
     ) external override onlyVaultManagers returns (uint256) {
-        require(swapInAmount > 0);
-        require(IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "!amount");
+        require(swapInAmount > 0 && IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "!amount");
         
         if(core) {
             return swap(
@@ -800,12 +504,8 @@ contract BalancerTripod is Tripod {
                 minOutAmount
                 );
         } else {
-            return swapReward(
-                tokenFrom,
-                tokenTo,
-                swapInAmount,
-                minOutAmount
-                );
+            swapRewardTokens();
+            return IERC20(tokenTo).balanceOf(address(this));
         }
     }
 
@@ -815,44 +515,19 @@ contract BalancerTripod is Tripod {
     *   Will only use toSwapTo since that is what is swapped to during tend
     */
     function createTendLP() internal {
-        IBalancerVault.BatchSwapStep[] memory swaps = new IBalancerVault.BatchSwapStep[](2);
-    
-        IAsset[] memory assets = new IAsset[](3);
-        int[] memory limits = new int[](3);
+        IBalancerTripod.PoolInfo memory _poolInfo = poolInfo[toSwapToIndex];
+        uint256 balance = IERC20(_poolInfo.token).balanceOf(address(this));
 
-        address _toSwapTo = toSwapTo;
-        uint256 balance = IERC20(_toSwapTo).balanceOf(address(this));
-        PoolInfo memory _poolInfo = poolInfoMapping[_toSwapTo];
-
-        swaps[0] = IBalancerVault.BatchSwapStep(
-            _poolInfo.poolId,
-            0,  //Index to use for toSwapTo
-            1,  //Index to use for bb-toSwapTo
-            balance,
-            abi.encode(0)
-        );
-
-        swaps[1] = IBalancerVault.BatchSwapStep(
-            poolId,
-            1,  //Index to use for bb-toSwapTo
-            2,  //Index to use for the main lp token
-            0, 
-            abi.encode(0)
-        );
-
-        //Match the address with the index we used above
-        assets[0] = IAsset(_toSwapTo);
-        assets[1] = IAsset(_poolInfo.bbPool);
-        assets[2] = IAsset(pool);
-
-        //Only need to set the toSwapTo balance goin in
-        limits[0] = int(balance);
+        (IBalancerVault.BatchSwapStep[] memory swaps, 
+            IAsset[] memory assets, 
+                int[] memory limits) = 
+                    BalancerHelper.getTendVariables(_poolInfo, balance);
         
         balancerVault.batchSwap(
             IBalancerVault.SwapKind.GIVEN_IN, 
-            swaps, 
-            assets, 
-            getFundManagement(), 
+            swaps,
+            assets,
+            getFundManagement(),
             limits, 
             block.timestamp
         );
@@ -926,19 +601,13 @@ contract BalancerTripod is Tripod {
     *   Function available to management to change which token we swap to from rewards
     *   will only be usdc or DAI
     */
-    function changeToSwapTo() external onlyVaultManagers {
-
-        if(toSwapTo == usdcAddress) {
-            toSwapToPoolId = ethDaiPoolId;
-            toSwapTo = daiAddress;
-        } else {
+    function changeToSwapTo(uint256 newIndex) external onlyVaultManagers {
+        if(poolInfo[newIndex].token == usdcAddress) {
             toSwapToPoolId = ethUsdcPoolId;
-            toSwapTo = usdcAddress;
-        }
-    }
-
-    function maxApprove(address _token, address _contract) internal {
-        IERC20(_token).safeApprove(_contract, type(uint256).max);
+        } else if(poolInfo[newIndex].token == daiAddress) {
+            toSwapToPoolId = ethDaiPoolId;
+        } else revert();
+        toSwapToIndex = newIndex;
     }
 
     function getFundManagement() 
@@ -952,6 +621,10 @@ contract BalancerTripod is Tripod {
                 payable(address(this)),
                 false
             );
+    }
+
+    function maxApprove(address _token, address _contract) internal {
+        IERC20(_token).safeApprove(_contract, type(uint256).max);
     }
 
     // ---------------------- YSWAPS FUNCTIONS ----------------------
@@ -968,7 +641,7 @@ contract BalancerTripod is Tripod {
         
             IERC20(token).safeApprove(_tradeFactory, type(uint256).max);
 
-            tf.enable(token, toSwapTo);
+            tf.enable(token, poolInfo[toSwapToIndex].token);
         }
         tradeFactory = _tradeFactory;
     }

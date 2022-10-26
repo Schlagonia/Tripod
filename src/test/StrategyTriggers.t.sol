@@ -187,4 +187,5 @@ contract StrategyTriggerTest is StrategyFixture {
         assertEq(IERC20(crv).balanceOf(address(tripod)), 0, "Curve balance");
         assertGt(tripod.balanceOfStake(), stakedBalance, "Staked bal");
     }
+
 }
