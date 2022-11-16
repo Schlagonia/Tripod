@@ -263,4 +263,49 @@ contract StrategyOperationsTest is StrategyFixture {
             DELTA
         );
     }
+
+    function testLossOnVaultWithdraw(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
+
+        assertGt(tripod.totalLpBalance(), 0);
+
+        //Pick Random Vault
+        uint256 i = _amount % 3;
+        IVault vault = assetFixtures[i].vault;
+        IERC20 _want = assetFixtures[i].want;
+        uint256 vaultBalance = vault.balanceOf(user);
+
+        uint256 beforeBalance = _want.balanceOf(user);
+
+        //Withdraw when all funds are deployed, should do nothing
+        vm.prank(user);
+        vault.withdraw(vaultBalance);
+
+        //We should have burned all vault shares and withdrawn nothing
+        assertEq(beforeBalance, _want.balanceOf(user), "want bal");
+        assertEq(vaultBalance, vault.balanceOf(user), "vualt bal");
+        assertGt(tripod.totalLpBalance(), 0);
+
+        skip(1);
+        //Free up some funds to the vault
+        vm.prank(gov);
+        vault.updateStrategyDebtRatio(address(assetFixtures[i].strategy), 5_000);
+
+        vm.prank(keeper);
+        tripod.harvest();
+
+        skip(6 hours);
+
+        uint256 available = _want.balanceOf(address(vault));
+
+        //Try and Withdraw all funds
+        vm.prank(user);
+        vault.withdraw(vaultBalance);
+
+        //Should have withdrawn what was available
+        assertEq(beforeBalance + available, _want.balanceOf(user), "want bal");
+        //Should have only burned about half of the shares
+        assertRelApproxEq(vault.balanceOf(user), vaultBalance / 2, DELTA);
+    }
 }
