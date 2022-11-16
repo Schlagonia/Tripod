@@ -139,24 +139,24 @@ contract BalancerTripod is Tripod {
         toSwapToPoolId = ethUsdcPoolId;
 
         //Set array of pool Infos's for each token
-        setBalancerPoolInfos();
+        _setBalancerPoolInfos();
 
         //Set mapping of curve index's
-        setCRVPoolIndexs();
+        _setCRVPoolIndexs();
 
         // The reward tokens are the tokens provided to the pool
         //This will update them based on current rewards on Aura
         _updateRewardTokens();
 
-        maxApprove(tokenA, address(balancerVault));
-        maxApprove(tokenB, address(balancerVault));
-        maxApprove(tokenC, address(balancerVault));
-        maxApprove(pool, address(depositContract));
+        _maxApprove(tokenA, address(balancerVault));
+        _maxApprove(tokenB, address(balancerVault));
+        _maxApprove(tokenC, address(balancerVault));
+        _maxApprove(pool, address(depositContract));
         
         //Max approve the curvePool as well for swaps during rebalnce
-        maxApprove(tokenA, address(curvePool));
-        maxApprove(tokenB, address(curvePool));
-        maxApprove(tokenC, address(curvePool));
+        _maxApprove(tokenA, address(curvePool));
+        _maxApprove(tokenB, address(curvePool));
+        _maxApprove(tokenC, address(curvePool));
     }
 
     /*
@@ -259,7 +259,7 @@ contract BalancerTripod is Tripod {
      * @notice
      *  Function used internally to collect the accrued rewards mid epoch
      */
-    function getReward() internal override {
+    function _getReward() internal override {
         rewardsContract.getReward(address(this), harvestExtras);
     }
 
@@ -269,7 +269,7 @@ contract BalancerTripod is Tripod {
      *  Creates a batchSwap for each provider token
      * @return the amounts actually invested for each token
      */
-    function createLP() internal override returns (uint256, uint256, uint256) {
+    function _createLP() internal override returns (uint256, uint256, uint256) {
     
         (IBalancerVault.BatchSwapStep[] memory swaps, 
             IAsset[] memory assets, 
@@ -280,7 +280,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            getFundManagement(), 
+            _getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -300,7 +300,7 @@ contract BalancerTripod is Tripod {
      *      - burns the LP liquidity specified amount, all mins are 0
      * @param amount, amount of liquidity to burn
      */
-    function burnLP(
+    function _burnLP(
         uint256 _amount
     ) internal override {
 
@@ -313,7 +313,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            getFundManagement(), 
+            _getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -323,7 +323,7 @@ contract BalancerTripod is Tripod {
     * @notice
     *   Internal function to deposit lp tokens into Convex and stake
     */
-    function depositLP() internal override {
+    function _depositLP() internal override {
         uint256 toStake = IERC20(pool).balanceOf(address(this));
 
         if(toStake == 0) return;
@@ -336,7 +336,7 @@ contract BalancerTripod is Tripod {
     *   Internal function to unstake tokens from Convex
     *   harvesExtras will determine if we claim rewards, normally should be true
     */
-    function withdrawLP(uint256 amount) internal override {
+    function _withdrawLP(uint256 amount) internal override {
         if(amount == 0) return;
 
         rewardsContract.withdrawAndUnwrap(
@@ -353,7 +353,7 @@ contract BalancerTripod is Tripod {
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
      * @return swapped amount
      */
-    function swap(
+    function _swap(
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn,
@@ -406,7 +406,7 @@ contract BalancerTripod is Tripod {
     *   function used internally to sell the available Bal and Aura tokens
     *   We sell bal/Aura -> WETH -> toSwapTo
     */
-    function swapRewardTokens() internal override {
+    function _swapRewardTokens() internal override {
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
         uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
 
@@ -422,7 +422,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps,
             assets,
-            getFundManagement(), 
+            _getFundManagement(), 
             limits, 
             block.timestamp
         );   
@@ -434,7 +434,7 @@ contract BalancerTripod is Tripod {
     *   Will set the poolInfoMapping based on the underlying token
     *   Will set the poolInfo array in order of A, B, C for createLP() accounting
     */
-    function setBalancerPoolInfos() internal {
+    function _setBalancerPoolInfos() internal {
         (IERC20[] memory _tokens, , ) = balancerVault.getPoolTokens(poolId);
         IBalancerTripod.PoolInfo memory _poolInfo;
         for(uint256 i; i < _tokens.length; ++i) {
@@ -464,7 +464,7 @@ contract BalancerTripod is Tripod {
      * @notice
      *  Function used internally to set the index for each token in the 3Pool
      */
-    function setCRVPoolIndexs() internal {
+    function _setCRVPoolIndexs() internal {
         uint256 i = 0; 
         int128 poolIndex = 0;
         while (i < 3) {
@@ -497,14 +497,14 @@ contract BalancerTripod is Tripod {
         require(swapInAmount > 0 && IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "!amount");
         
         if(core) {
-            return swap(
+            return _swap(
                 tokenFrom,
                 tokenTo,
                 swapInAmount,
                 minOutAmount
                 );
         } else {
-            swapRewardTokens();
+            _swapRewardTokens();
             return IERC20(tokenTo).balanceOf(address(this));
         }
     }
@@ -514,7 +514,7 @@ contract BalancerTripod is Tripod {
     *   Function available internally to create an lp during tend
     *   Will only use toSwapTo since that is what is swapped to during tend
     */
-    function createTendLP() internal {
+    function _createTendLP() internal {
         IBalancerTripod.PoolInfo memory _poolInfo = poolInfo[toSwapToIndex];
         uint256 balance = IERC20(_poolInfo.token).balanceOf(address(this));
 
@@ -527,7 +527,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps,
             assets,
-            getFundManagement(),
+            _getFundManagement(),
             limits, 
             block.timestamp
         );
@@ -542,13 +542,13 @@ contract BalancerTripod is Tripod {
     */
     function tend() external override onlyKeepers {
         //Claim all outstanding rewards
-        getReward();
+        _getReward();
         //Swap out of all Reward Tokens
-        swapRewardTokens();
+        _swapRewardTokens();
         //Create LP tokens
-        createTendLP();
+        _createTendLP();
         //Stake LP tokens
-        depositLP();
+        _depositLP();
     }
 
     /*
@@ -610,7 +610,7 @@ contract BalancerTripod is Tripod {
         toSwapToIndex = newIndex;
     }
 
-    function getFundManagement() 
+    function _getFundManagement() 
         internal 
         view 
         returns (IBalancerVault.FundManagement memory fundManagement) 
@@ -623,7 +623,7 @@ contract BalancerTripod is Tripod {
             );
     }
 
-    function maxApprove(address _token, address _contract) internal {
+    function _maxApprove(address _token, address _contract) internal {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
     }
 

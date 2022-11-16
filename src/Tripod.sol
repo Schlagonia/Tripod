@@ -378,11 +378,11 @@ abstract contract Tripod {
         _closePosition();
 
         // 2. SELL REWARDS FOR WANT's
-        swapRewardTokens();
+        _swapRewardTokens();
 
         // 3. REBALANCE PORTFOLIO
         // to leave the position with the initial proportions
-        rebalance();
+        _rebalance();
 
         // Check that we have returned with no losses
         require( 
@@ -446,7 +446,7 @@ abstract contract Tripod {
 
         // Open the LP position
         // Set invested amounts
-        (invested[tokenA], invested[tokenB], invested[tokenC]) = createLP();
+        (invested[tokenA], invested[tokenB], invested[tokenC]) = _createLP();
 
         (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
             TripodMath.getWeights(
@@ -456,7 +456,7 @@ abstract contract Tripod {
             );
 
         // Deposit LPs (if any)
-        depositLP();
+        _depositLP();
 
         // If there is loose balance, return it
         _returnLooseToProviders();
@@ -499,7 +499,7 @@ abstract contract Tripod {
     *   Checks the providers want balance of the Tripod, the provider and the credit available to it
     * @param _provider, the provider to check
     */  
-    function hasAvailableBalance(ProviderStrategy _provider) 
+    function _hasAvailableBalance(ProviderStrategy _provider) 
         internal 
         view 
         returns (bool) 
@@ -525,9 +525,9 @@ abstract contract Tripod {
         if(dontInvestWant) return false;
 
         return
-            hasAvailableBalance(providerA) && 
-                hasAvailableBalance(providerB) && 
-                    hasAvailableBalance(providerC);
+            _hasAvailableBalance(providerA) && 
+                _hasAvailableBalance(providerB) && 
+                    _hasAvailableBalance(providerC);
     }
 
     /*
@@ -539,9 +539,9 @@ abstract contract Tripod {
     */
     function tend() external virtual onlyKeepers {
         //Claim all outstanding rewards
-        getReward();
+        _getReward();
         //Swap out of all Reward Tokens
-        swapRewardTokens();
+        _swapRewardTokens();
     }
 
     /*
@@ -558,15 +558,15 @@ abstract contract Tripod {
     *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
     *   in comparision to the amounts the started with, i.e. return the same % return
     */
-    function rebalance() internal {
+    function _rebalance() internal {
         (uint8 direction, address token0, address token1, address token2) = TripodMath.rebalance();
         //If direction == 1 we swap one to two
         //if direction == 2 we swap two to one
         //else if its 0 we dont need to swap anything
         if(direction == 1) {
-            swapOneToTwo(token0, token1, token2);
+            _swapOneToTwo(token0, token1, token2);
         } else if(direction == 2){
-            swapTwoToOne(token0, token1, token2);
+            _swapTwoToOne(token0, token1, token2);
         }
     }
 
@@ -581,7 +581,7 @@ abstract contract Tripod {
      * @param token0Address, address of one of the tokens we are swapping to
      * @param token1Address, address of the second token we are swapping to
     */
-    function swapOneToTwo(
+    function _swapOneToTwo(
         address toSwapToken,
         address token0Address,
         address token1Address
@@ -613,14 +613,14 @@ abstract contract Tripod {
             swapTo1 = n - swapTo0;
         }
         
-        swap(
+        _swap(
             toSwapToken, 
             token0Address, 
             swapTo0,
             0
         );
 
-        swap(
+        _swap(
             toSwapToken, 
             token1Address, 
             swapTo1, 
@@ -639,7 +639,7 @@ abstract contract Tripod {
      * @param token1Address, address of the second token we are swapping from
      * @param toTokenAddress, address of the token we are swapping to
     */
-    function swapTwoToOne(
+    function _swapTwoToOne(
         address token0Address,
         address token1Address,
         address toTokenAddress
@@ -660,14 +660,14 @@ abstract contract Tripod {
                 10 ** IERC20Extended(token1Address).decimals()
         ));
 
-        swap(
+        _swap(
             token0Address, 
             toTokenAddress, 
             toSwapFrom0, 
             0
         );
 
-        swap(
+        _swap(
             token1Address, 
             toTokenAddress, 
             toSwapFrom1, 
@@ -714,7 +714,7 @@ abstract contract Tripod {
         }
     }
 
-    function createLP() internal virtual returns (uint256, uint256, uint256);
+    function _createLP() internal virtual returns (uint256, uint256, uint256);
 
     /*
      * @notice
@@ -722,7 +722,7 @@ abstract contract Tripod {
      *      - burns the LP liquidity specified amount, all mins are 0
      * @param amount, amount of liquidity to burn
      */
-    function burnLP(uint256 _amount) internal virtual;
+    function _burnLP(uint256 _amount) internal virtual;
 
     /*
      * @notice
@@ -735,32 +735,32 @@ abstract contract Tripod {
      * @param minBOut, the min amount of Token B we should recieve
      * @param minCout, the min amount of Token C we should recieve
      */
-    function burnLP(
+    function _burnLP(
         uint256 _amount,
         uint256 minAOut, 
         uint256 minBOut, 
         uint256 minCOut
     ) internal virtual {
-        burnLP(_amount);
+        _burnLP(_amount);
         require(minAOut <= balanceOfA() &&
                     minBOut <= balanceOfB() &&
                         minCOut <= balanceOfC(), "min");
     }
 
-    function getReward() internal virtual;
+    function _getReward() internal virtual;
 
-    function depositLP() internal virtual;
+    function _depositLP() internal virtual;
 
-    function withdrawLP(uint256 amount) internal virtual;
+    function _withdrawLP(uint256 amount) internal virtual;
 
     /*
      * @notice
      *  Function available internally swapping amounts necessary to swap rewards
      *  This can be overwritten in order to apply custom reward token swaps
      */
-    function swapRewardTokens() internal virtual;
+    function _swapRewardTokens() internal virtual;
 
-    function swap(
+    function _swap(
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn,
@@ -777,13 +777,13 @@ abstract contract Tripod {
     * @param _minOut, minimum out we will accept
     * @returns the amount swapped to
     */
-    function swapReward(
+    function _swapReward(
         address _from, 
         address _to, 
         uint256 _amountIn, 
         uint256 _minOut
     ) internal virtual returns (uint256) {
-        return swap(_from, _to, _amountIn, _minOut);
+        return _swap(_from, _to, _amountIn, _minOut);
     }
 
     function quote(
@@ -802,7 +802,7 @@ abstract contract Tripod {
      */
     function _closePosition() internal returns (uint256, uint256, uint256) {
         // Unstake LP from staking contract
-        withdrawLP(balanceOfStake());
+        _withdrawLP(balanceOfStake());
 
         if (balanceOfPool() == 0) {
             return (0, 0, 0);
@@ -811,7 +811,7 @@ abstract contract Tripod {
         // **WARNING**: This call is sandwichable, care should be taken
         //              to always execute with a private relay
         // We take care of mins in the harvest logic to assure we account for swaps
-        burnLP(balanceOfPool());
+        _burnLP(balanceOfPool());
 
         return (balanceOfA(), balanceOfB(), balanceOfC());
     }
@@ -950,9 +950,9 @@ abstract contract Tripod {
         uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
         dontInvestWant = true;
-        withdrawLP(balanceOfStake());
+        _withdrawLP(balanceOfStake());
         //Burn lp will handle min Out checks
-        burnLP(
+        _burnLP(
             balanceOfPool(),
             expectedBalanceA,
             expectedBalanceB,

@@ -105,7 +105,7 @@ library BalancerHelper {
         }
     }
 
-    function getCreateLPVariables()public view returns(IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
+    function getCreateLPVariables() public view returns(IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
         IBalancerTripod tripod = IBalancerTripod(address(this));
         swaps = new IBalancerVault.BatchSwapStep[](6);
         assets = new IAsset[](7);

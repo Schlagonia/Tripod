@@ -436,7 +436,7 @@ library TripodMath {
                 //Swapping A and B -> C
                 info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(tripod, info, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+                    _quoteSwapTwoToOne(tripod, info, tokens.tokenA, tokens.tokenB, tokens.tokenC);
                 return ((startingA - change0), 
                             (startingB - change1), 
                                 (startingC + change2));
@@ -444,7 +444,7 @@ library TripodMath {
                 //swapping A and C -> B
                 info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(tripod, info, tokens.tokenA, tokens.tokenC, tokens.tokenB);
+                    _quoteSwapTwoToOne(tripod, info, tokens.tokenA, tokens.tokenC, tokens.tokenB);
                 return ((startingA - change0), 
                             (startingB + change2), 
                                 (startingC - change1));
@@ -452,7 +452,7 @@ library TripodMath {
                 //Swapping A -> B and C
                 info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapOneToTwo(tripod, info, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+                    _quoteSwapOneToTwo(tripod, info, tokens.tokenA, tokens.tokenB, tokens.tokenC);
                 return ((startingA - change0), 
                             (startingB + change1), 
                                 (startingC + change2));
@@ -463,7 +463,7 @@ library TripodMath {
                 //Swap B and C -> A
                 info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapTwoToOne(tripod, info, tokens.tokenB, tokens.tokenC, tokens.tokenA);
+                    _quoteSwapTwoToOne(tripod, info, tokens.tokenB, tokens.tokenC, tokens.tokenA);
                 return ((startingA + change2), 
                             (startingB - change0), 
                                 (startingC - change1));
@@ -471,7 +471,7 @@ library TripodMath {
                 //swapping B -> A and C
                 info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
                 (change0, change1, change2) = 
-                    quoteSwapOneToTwo(tripod, info, tokens.tokenB, tokens.tokenA, tokens.tokenC);
+                    _quoteSwapOneToTwo(tripod, info, tokens.tokenB, tokens.tokenA, tokens.tokenC);
                 return ((startingA + change1), 
                             (startingB - change0), 
                                 (startingC + change2));
@@ -481,7 +481,7 @@ library TripodMath {
             //swap C -> A and B
             info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
             (change0, change1, change2) = 
-                quoteSwapOneToTwo(tripod, info, tokens.tokenC, tokens.tokenA, tokens.tokenB);
+                _quoteSwapOneToTwo(tripod, info, tokens.tokenC, tokens.tokenA, tokens.tokenB);
             return ((startingA + change1), 
                         (startingB + change2), 
                             (startingC - change0));
@@ -502,7 +502,7 @@ library TripodMath {
      * @param token1Address, address of the second token we are swapping to
      * @return negative change in toSwapToken, positive change for token0, positive change for token1
     */
-    function quoteSwapOneToTwo(
+    function _quoteSwapOneToTwo(
         ITripod tripod,
         RebalanceInfo memory info, 
         address toSwapFrom, 
@@ -562,7 +562,7 @@ library TripodMath {
      * @param toTokenAddress, address of the token we are swapping to
      * @return negative change for token0, negative change for token1, positive change for toTokenAddress
     */
-    function quoteSwapTwoToOne(
+    function _quoteSwapTwoToOne(
         ITripod tripod,
         RebalanceInfo memory info,
         address token0Address,
