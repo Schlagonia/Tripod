@@ -46,7 +46,7 @@ library TripodMath {
     */
 
     struct RebalanceInfo {
-        uint256 precision;
+        uint256 precisionA;
         uint256 a0;
         uint256 a1;
         uint256 b0;
@@ -97,16 +97,16 @@ library TripodMath {
         unchecked {
             //pre-calculate a couple of parts that are used twice
             //var1 = a0*b1*eOfC
-            uint256 var1 = info.a0 * info.b1 * info.eOfC / info.precision;
+            uint256 var1 = info.a0 * info.b1 * info.eOfC / info.precisionA;
             //var2 = a1*b0*eOfC
-            uint256 var2 = info.a1 * info.b0 * info.eOfC / info.precision;
+            uint256 var2 = info.a1 * info.b0 * info.eOfC / info.precisionA;
 
             uint256 numerator = var2 + (info.b0 * info.c1) - (info.b1 * info.c0) - var1;
 
             uint256 denominator = 
-                (info.a1 * info.c0 * info.eOfB / info.precision) + 
+                (info.a1 * info.c0 * info.eOfB / info.precisionA) + 
                     var2 - 
-                        (info.a0 * info.c1 * info.eOfB / info.precision) - 
+                        (info.a0 * info.c1 * info.eOfB / info.precisionA) - 
                             var1;
     
             p = numerator * 1e18 / denominator;
@@ -134,7 +134,7 @@ library TripodMath {
 
             uint256 denominator = 
                 (info.b0 * 1e18) + 
-                    (info.eOfB * info.a0 / info.precision * p);
+                    (info.eOfB * info.a0 / info.precisionA * p);
 
             return numerator * 1e18 / denominator;
         }
@@ -513,23 +513,23 @@ library TripodMath {
         uint256 swapTo1;
 
         unchecked {
-            uint256 precision = 10 ** IERC20Extended(toSwapFrom).decimals();
+            uint256 precisionA = 10 ** IERC20Extended(toSwapFrom).decimals();
             
             uint256 p;
 
-            (n, p) = getNandP(RebalanceInfo(
-                precision,
-                tripod.invested(toSwapFrom),
-                info.a1,
-                tripod.invested(toSwapTo0),
-                info.b1,
-                tripod.quote(toSwapFrom, toSwapTo0, precision),
-                0,
-                tripod.invested(toSwapTo1),
-                info.c1,
-                tripod.quote(toSwapFrom, toSwapTo1, precision),
-                0
-            ));
+            (n, p) = getNandP(RebalanceInfo({
+                precisionA : precisionA,
+                a0 : tripod.invested(toSwapFrom),
+                a1 : info.a1,
+                b0 : tripod.invested(toSwapTo0),
+                b1 : info.b1,
+                eOfB : tripod.quote(toSwapFrom, toSwapTo0, precisionA),
+                precisionB : 0, //Not needed for this calculation
+                c0 : tripod.invested(toSwapTo1),
+                c1 : info.c1,
+                eOfC : tripod.quote(toSwapFrom, toSwapTo1, precisionA),
+                precisionC : 0 // Not needed
+            }));
 
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
@@ -551,8 +551,8 @@ library TripodMath {
 
     /*
      * @notice
-     *  Function to be called during rebalancing.
-     *  This will swap the extra tokens from the two that returned raios higher than target return to the other one
+     *  Function to be called during mock rebalancing.
+     *  This will quote swap the extra tokens from the two that returned raios higher than target return to the other one
      *  in relation to what they gained attempting to make everything as equal as possible
      *  will return the absolute changes expected for each token, accounting will take place in parent function
      * @param tripod, the instance of the tripod to use
@@ -570,19 +570,20 @@ library TripodMath {
         address toTokenAddress
     ) internal view returns(uint256, uint256, uint256) {
 
-        (uint256 toSwapFrom0, uint256 toSwapFrom1) =getNbAndNc(RebalanceInfo(
-            0,
-            tripod.invested(toTokenAddress),
-            info.a1,
-            tripod.invested(token0Address),
-            info.b1,
-            tripod.quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
-            10 ** IERC20Extended(token0Address).decimals(),
-            tripod.invested(token1Address),
-            info.c1,
-            tripod.quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
-            10 ** IERC20Extended(token1Address).decimals()
-        ));
+        (uint256 toSwapFrom0, uint256 toSwapFrom1) = 
+            getNbAndNc(RebalanceInfo({
+                precisionA : 0, //Not needed
+                a0 : tripod.invested(toTokenAddress),
+                a1 : info.a1,
+                b0 : tripod.invested(token0Address),
+                b1 : info.b1,
+                eOfB : tripod.quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
+                precisionB : 10 ** IERC20Extended(token0Address).decimals(),
+                c0 : tripod.invested(token1Address),
+                c1 : info.c1,
+                eOfC : tripod.quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
+                precisionC : 10 ** IERC20Extended(token1Address).decimals()
+            }));
 
         uint256 amountOut = tripod.quote(
             token0Address, 
@@ -590,7 +591,7 @@ library TripodMath {
             toSwapFrom0
         );
 
-        uint256 amountOut2 = tripod. quote(
+        uint256 amountOut2 = tripod.quote(
             token1Address, 
             toTokenAddress, 
             toSwapFrom1
