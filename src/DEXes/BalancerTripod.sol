@@ -59,6 +59,7 @@ contract BalancerTripod is Tripod {
 
     /***
         Aura specific variables for staking
+        We use the Convex interfaces since Aura is a fork, but using the Aura addresses for all contracts.
     ***/
     //Main contracts for staking and rewwards
     IConvexDeposit public constant depositContract = 
