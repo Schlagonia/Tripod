@@ -192,15 +192,15 @@ abstract contract Tripod {
 
     function isGovernance() internal view returns (bool) {
         return
-            msg.sender == providerA.vault().governance() ||
-            msg.sender == providerB.vault().governance() ||
+            msg.sender == providerA.vault().governance() &&
+            msg.sender == providerB.vault().governance() &&
             msg.sender == providerC.vault().governance();
     }
 
     function isVaultManager() internal view returns (bool) {
         return
-            msg.sender == providerA.vault().management() ||
-            msg.sender == providerB.vault().management() ||
+            msg.sender == providerA.vault().management() &&
+            msg.sender == providerB.vault().management() &&
             msg.sender == providerC.vault().management();
     }
 
@@ -254,6 +254,10 @@ abstract contract Tripod {
         providerA = ProviderStrategy(_providerA);
         providerB = ProviderStrategy(_providerB);
         providerC = ProviderStrategy(_providerC);
+
+        //Make sure we have the same gov set for all Providers
+        require(providerA.vault().governance() == providerB.vault().governance() && 
+                    providerB.vault().governance() == providerC.vault().governance(), "!gov");
 
         referenceToken = _referenceToken;
         pool = _pool;
