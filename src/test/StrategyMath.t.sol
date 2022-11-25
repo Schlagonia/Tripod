@@ -298,4 +298,55 @@ contract TripodMathTest is StrategyFixture {
         //Need to give a buffer with decimal changes
         assertRelApproxEq(nb / 1e4, nc * 1e12, DELTA);
     }
+
+    function testExtremes(uint256 _amount) public {
+        TripodMath.RebalanceInfo memory info = 
+            TripodMath.RebalanceInfo({
+                precisionA : 0,
+                a0 : 0,
+                a1 : 0,
+                b0 : 0,
+                b1 : 0,
+                eOfB : 0,
+                precisionB : 0,
+                c0 : 0,
+                c1 : 0,
+                eOfC : 0,
+                precisionC : 0 
+        });
+
+        uint256 n;
+        uint256 p;
+        uint256 nb;
+        uint256 nc;
+
+        // WE should revert when all values are 0
+        vm.expectRevert(stdError.divisionError);
+        (n, p) = TripodMath.getNandP(info);
+
+        vm.expectRevert(stdError.divisionError);
+        (nb, nc) =  TripodMath.getNbAndNc(info);
+
+        info = TripodMath.RebalanceInfo({
+            precisionA : type(uint256).max,
+            a0 : type(uint256).max,
+            a1 : type(uint256).max,
+            b0 : type(uint256).max,
+            b1 : type(uint256).max,
+            eOfB : type(uint256).max,
+            precisionB : type(uint256).max,
+            c0 : type(uint256).max,
+            c1 : type(uint256).max,
+            eOfC : type(uint256).max,
+            precisionC : type(uint256).max 
+        });
+
+        vm.expectRevert(stdError.divisionError);
+        (n, p) = TripodMath.getNandP(info);
+
+        (nb, nc) = TripodMath.getNbAndNc(info);
+
+        assertEq(nc, 0);
+        assertEq(nb, 0);
+    }
 }
