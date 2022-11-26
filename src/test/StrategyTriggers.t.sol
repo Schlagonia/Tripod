@@ -53,7 +53,7 @@ contract StrategyTriggerTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             true
         ); 
@@ -67,7 +67,7 @@ contract StrategyTriggerTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             false
         ); 
@@ -82,7 +82,7 @@ contract StrategyTriggerTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             1 days,
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 
@@ -97,7 +97,7 @@ contract StrategyTriggerTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 
@@ -117,7 +117,7 @@ contract StrategyTriggerTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 
@@ -147,7 +147,7 @@ contract StrategyTriggerTest is StrategyFixture {
             100,
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 
@@ -161,7 +161,7 @@ contract StrategyTriggerTest is StrategyFixture {
             100e18,
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 

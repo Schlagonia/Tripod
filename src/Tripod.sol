@@ -84,18 +84,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {TripodMath} from "./libraries/TripodMath.sol";
 import {IVault} from "./interfaces/Vault.sol";
-
-interface ProviderStrategy {
-    function vault() external view returns (IVault);
-
-    function keeper() external view returns (address);
-
-    function want() external view returns (address);
-
-    function balanceOfWant() external view returns (uint256);
-
-    function harvest() external;
-}
+import {IProviderStrategy} from "./interfaces/IProviderStrategy.sol";
 
 interface IBaseFee {
     function isCurrentBaseFeeAcceptable() external view returns (bool);
@@ -116,11 +105,11 @@ abstract contract Tripod {
     // Constant to use in ratio calculations
     uint256 internal constant RATIO_PRECISION = 1e18;
     // Provider strategy of tokenA
-    ProviderStrategy public providerA;
+    IProviderStrategy public providerA;
     // Provider strategy of tokenB
-    ProviderStrategy public providerB;
+    IProviderStrategy public providerB;
     // Provider strategy of tokenC
-    ProviderStrategy public providerC;
+    IProviderStrategy public providerC;
 
     // Address of tokenA
     address public tokenA;
@@ -151,12 +140,11 @@ abstract contract Tripod {
     bool public launchHarvest;
     // Boolean values protecting against re-investing into the pool
     bool public dontInvestWant;
-    bool public autoProtectionDisabled;
 
     // Thresholds to operate the strat
     uint256 public minAmountToSell;
-    uint256 public maxPercentageLoss;
     uint256 public minRewardToHarvest;
+    uint256 public maxPercentageLoss;
     //Tripod version of maxReportDelay
     uint256 public maxEpochTime;
 
@@ -251,13 +239,14 @@ abstract contract Tripod {
         address _pool
     ) internal virtual {
         require(address(providerA) == address(0));
-        providerA = ProviderStrategy(_providerA);
-        providerB = ProviderStrategy(_providerB);
-        providerC = ProviderStrategy(_providerC);
+        providerA = IProviderStrategy(_providerA);
+        providerB = IProviderStrategy(_providerB);
+        providerC = IProviderStrategy(_providerC);
 
         //Make sure we have the same gov set for all Providers
-        require(providerA.vault().governance() == providerB.vault().governance() && 
-                    providerB.vault().governance() == providerC.vault().governance(), "!gov");
+        address vaultGov = providerA.vault().governance();
+        require(vaultGov == providerB.vault().governance() && 
+                    vaultGov == providerC.vault().governance());
 
         referenceToken = _referenceToken;
         pool = _pool;
@@ -265,7 +254,7 @@ abstract contract Tripod {
         maxEpochTime = type(uint256).max;
 
         // NOTE: we let some loss to avoid getting locked in the position if something goes slightly wrong
-        maxPercentageLoss = RATIO_PRECISION / 1_000; // 0.10%
+        maxPercentageLoss = 1e15; // 0.10%
 
         tokenA = address(providerA.want());
         tokenB = address(providerB.want());
@@ -278,10 +267,8 @@ abstract contract Tripod {
         IERC20(tokenC).safeApprove(_providerC, type(uint256).max);
 
         //Check if we are using the reference token for easier swaps from rewards
-        if (tokenA == referenceToken || tokenB == referenceToken || tokenC == referenceToken) {
+        if (tokenA == _referenceToken || tokenB == _referenceToken || tokenC == _referenceToken) {
             usingReference = true;
-        } else {
-            usingReference = false;
         }
     }
 
@@ -307,7 +294,6 @@ abstract contract Tripod {
     * @param _minRewardToHarvest, new value to use
     * @param _minAmountToSell, new value to use
     * @param _maxEpochTime, new value to use
-    * @param _autoProtectionDisabled, new value to use
     * @param _maxPercentageLoss, new value to use
     * @param _newLaunchHarvest, bool to have keepers launch a harvest
     */
@@ -316,7 +302,6 @@ abstract contract Tripod {
         uint256 _minRewardToHarvest,
         uint256 _minAmountToSell,
         uint256 _maxEpochTime,
-        bool _autoProtectionDisabled,
         uint256 _maxPercentageLoss,
         bool _newLaunchHarvest
     ) external onlyVaultManagers {
@@ -324,7 +309,6 @@ abstract contract Tripod {
         minRewardToHarvest = _minRewardToHarvest;
         minAmountToSell = _minAmountToSell;
         maxEpochTime = _maxEpochTime;
-        autoProtectionDisabled = _autoProtectionDisabled;
         require(_maxPercentageLoss <= RATIO_PRECISION);
         maxPercentageLoss = _maxPercentageLoss;
         launchHarvest = _newLaunchHarvest;
@@ -498,40 +482,13 @@ abstract contract Tripod {
     }
 
     /*
-    * @notice
-    *   function used internally to determine if a provider has funds available to deposit
-    *   Checks the providers want balance of the Tripod, the provider and the credit available to it
-    * @param _provider, the provider to check
-    */  
-    function _hasAvailableBalance(ProviderStrategy _provider) 
-        internal 
-        view 
-        returns (bool) 
-    {
-        return 
-            _provider.balanceOfWant() > minAmountToSell ||
-                IERC20(_provider.want()).balanceOf(address(this)) > minAmountToSell ||
-                    _provider.vault().creditAvailable(address(_provider)) > minAmountToSell;
-    }
-
-    /*
      * @notice
      *  Function used in harvestTrigger in providers to decide wether an epoch can be started or not:
      * - if there is an available for all three tokens but no position open, return true
      * @return wether to start a new epoch or not
      */
     function shouldStartEpoch() public view returns (bool) {
-        //If we are currently invested return false
-        if(invested[tokenA] != 0 ||
-            invested[tokenB] != 0 || 
-                invested[tokenC] != 0) return false;
-        
-        if(dontInvestWant) return false;
-
-        return
-            _hasAvailableBalance(providerA) && 
-                _hasAvailableBalance(providerB) && 
-                    _hasAvailableBalance(providerC);
+        return TripodMath.shouldStartEpoch();
     }
 
     /*
@@ -1010,7 +967,7 @@ abstract contract Tripod {
      * @param _newProvider, new address of provider
      */
     function migrateProvider(address _newProvider) external onlyProviders {
-        ProviderStrategy newProvider = ProviderStrategy(_newProvider);
+        IProviderStrategy newProvider = IProviderStrategy(_newProvider);
         address providerWant = address(newProvider.want());
         if (providerWant == tokenA) {
             IERC20(tokenA).safeApprove(address(providerA), 0);

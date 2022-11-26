@@ -569,649 +569,9 @@ interface IFeedRegistry {
 
 
 
-interface ITripod{
-    function pool() external view returns(address);
-    function tokenA() external view returns (address);
-    function balanceOfA() external view returns(uint256);
-    function tokenB() external view returns (address);
-    function balanceOfB() external view returns(uint256);
-    function tokenC() external view returns (address);
-    function balanceOfC() external view returns(uint256);
-    function invested(address) external view returns(uint256);
-    function totalLpBalance() external view returns(uint256);
-    function investedWeight(address)external view returns(uint256);
-    function quote(address, address, uint256) external view returns(uint256);
-    function usingReference() external view returns(bool);
-    function referenceToken() external view returns(address);
-    function balanceOfTokensInLP() external view returns(uint256, uint256, uint256);
-    function getRewardTokens() external view returns(address[] memory);
-    function pendingRewards() external view returns(uint256[] memory);
-}
 
-interface IBalancerTripod is ITripod{
-    //Struct for each bb pool that makes up the main pool
-    struct PoolInfo {
-        address token;
-        address bbPool;
-        bytes32 poolId;
-    }
-    function poolInfo(uint256) external view returns(PoolInfo memory);
-    function curveIndex(address) external view returns(int128);
-    function poolId() external view returns(bytes32);
-    function toSwapToIndex() external view returns(uint256); 
-    function toSwapToPoolId() external view returns(bytes32);
-}
 
-/// @title Tripod Math
-/// @notice Contains the Rebalancing Logic and Math for the Tripod. Used during both the rebalance and quote rebalance functions
-library TripodMath {
 
-    /*
-    * @notice
-    *   The rebalancing math aims to have each tokens relative return be equal after the rebalance irregardless of the strating weights or exchange rates
-    *   These functions are called during swapOneToTwo() or swapTwoToOne() in the Tripod.sol https://github.com/Schlagonia/Tripod/blob/master/src/Tripod.sol
-    *   All math was adopted from the original joint strategies https://github.com/fp-crypto/joint-strategy
-
-        All equations will use the following variables:
-            a0 = The invested balance of the first token
-            a1 = The ending balance of the first token
-            b0 = The invested balance of the second token
-            b1 = The ending balance of the second token
-            c0 = the invested balance of the third token
-            c1 = The ending balance of the third token
-            eOfB = The exchange rate of either a => b or b => a depending on which way we are swapping
-            eOfC = The exchange rate of either a => c or c => a depending on which way we are swapping
-            precision = 10 ** first token decimals
-            precisionB = 10 ** second token decimals
-            precisionC = 10 ** third token decimals
-
-            Variables specific to swapOneToTwo()
-            n = The amount of a token we will be selling
-            p = The % of n we will be selling from a => b
-
-            Variables specific to swapTwoToOne()
-            nb = The amount of b we will be swapping to a
-            nc = The amount of c we will be swapping to a 
-
-        The starting equations that all of the following are derived from is:
-
-         a1 - n       b1 + eOfB*n*p      c1 + eOfC*n*(1-p) 
-        --------  =  --------------  =  -------------------
-           a0              b0                   c0
-
-    */
-
-    struct RebalanceInfo {
-        uint256 precision;
-        uint256 a0;
-        uint256 a1;
-        uint256 b0;
-        uint256 b1;
-        uint256 eOfB;
-        uint256 precisionB;
-        uint256 c0;
-        uint256 c1;
-        uint256 eOfC;
-        uint256 precisionC;
-    }   
-
-    struct Tokens {
-        address tokenA;
-        uint256 ratioA;
-        address tokenB;
-        uint256 ratioB;
-        address tokenC;
-        uint256 ratioC;
-    }
-    
-    uint256 private constant RATIO_PRECISION = 1e18;
-    /*
-    * @notice
-    *   Internal function to be called during swapOneToTwo to return n: the amount of a to sell and p: the % of n to sell to b
-    * @param info, Rebalance info struct with all needed variables
-    * @return n, The amount of a to sell
-    * @return p, The percent of a we will sell to b repersented as 1e18. i.e. 50% == .5e18
-    */
-    function getNandP(RebalanceInfo memory info) public pure returns(uint256 n, uint256 p) {
-        p = getP(info);
-        n = getN(info, p);
-    }
-
-    /*
-    * @notice
-    *   Internal function used to calculate the percent of n that will be sold to b
-    *   p is repersented as 1e18
-    * @param info, RebalanceInfo stuct
-    * @return the percent of a to sell to b as 1e18
-    */
-    function getP(RebalanceInfo memory info) public pure returns (uint256 p) {
-        /*
-        *             a1*b0*eOfC + b0c1 - b1c0 - a0*b1*eOfC
-        *   p = ----------------------------------------------------
-        *        a1*c0*eOfB + a1*b0*eOfC - a0*c1*eOfB - a0*b1*eOfC
-        */
-        unchecked {
-            //pre-calculate a couple of parts that are used twice
-            //var1 = a0*b1*eOfC
-            uint256 var1 = info.a0 * info.b1 * info.eOfC / info.precision;
-            //var2 = a1*b0*eOfC
-            uint256 var2 = info.a1 * info.b0 * info.eOfC / info.precision;
-
-            uint256 numerator = var2 + (info.b0 * info.c1) - (info.b1 * info.c0) - var1;
-
-            uint256 denominator = 
-                (info.a1 * info.c0 * info.eOfB / info.precision) + 
-                    var2 - 
-                        (info.a0 * info.c1 * info.eOfB / info.precision) - 
-                            var1;
-    
-            p = numerator * 1e18 / denominator;
-        }
-    }
-
-    /*
-    * @notice
-    *   Internal function used to calculate the amount of a to sell once p has been calculated
-    *   Converts all uint's to int's because the numerator will be negative
-    * @param info, RebalanceInfo stuct
-    * @param p, % calculated to of b to sell to a in 1e18
-    * @return The amount of a to sell
-    */
-    function getN(RebalanceInfo memory info, uint256 p) public pure returns(uint256) {
-        /*
-        *          (a1*b0) - (a0*b1)  
-        *    n = -------------------- 
-        *           b0 + eOfB*a0*P
-        */
-        unchecked{
-            uint256 numerator = 
-                (info.a1 * info.b0) -
-                    (info.a0 * info.b1);
-
-            uint256 denominator = 
-                (info.b0 * 1e18) + 
-                    (info.eOfB * info.a0 / info.precision * p);
-
-            return numerator * 1e18 / denominator;
-        }
-    }
-
-    /*
-    * @notice
-    *   Internal function used to calculate the _nb: the amount of b to sell to a
-    *       and nc : the amount of c to sell to a. For the swapTwoToOne() function.
-    *   The calculations for both b and c use the same denominator and the numerator is the same consturction but the variables for b or c are swapped 
-    * @param info, RebalanceInfo stuct
-    * @return _nb, the amount of b to sell to a in terms of b
-    * @return nc, the amount of c to sell to a in terms of c 
-    */
-    function getNbAndNc(RebalanceInfo memory info) public pure returns(uint256 nb, uint256 nc) {
-        /*
-        *          a0*x1 + y0*eOfy*x1 - a1*x0 - y1*eOfy*x0
-        *   nx = ------------------------------------------
-        *               a0 + eOfc*c0 + b0*eOfb
-        */
-        unchecked {
-            uint256 numeratorB = 
-                (info.a0 * info.b1) + 
-                    (info.c0 * info.eOfC * info.b1 / info.precisionC) - 
-                        (info.a1 * info.b0) - 
-                            (info.c1 * info.eOfC * info.b0 / info.precisionC);
-
-            uint256 numeratorC = 
-                (info.a0 * info.c1) + 
-                    (info.b0 * info.eOfB * info.c1 / info.precisionB) - 
-                        (info.a1 * info.c0) - 
-                            (info.b1 * info.eOfB * info.c0 / info.precisionB);
-
-            uint256 denominator = 
-                info.a0 + 
-                    (info.eOfC * info.c0 / info.precisionC) + 
-                        (info.b0 * info.eOfB / info.precisionB);
-
-            nb = numeratorB / denominator;
-            nc = numeratorC / denominator;
-        }
-    }
-
-    /*
-     * @notice
-     *  Function available publicly estimating the balancing ratios for the tokens in the form:
-     * ratio = currentBalance / invested Balance
-     * @param startingA, the invested balance of TokenA
-     * @param currentA, current balance of tokenA
-     * @param startingB, the invested balance of TokenB
-     * @param currentB, current balance of tokenB
-     * @param startingC, the invested balance of TokenC
-     * @param currentC, current balance of tokenC
-     * @return _a, _b _c, ratios for tokenA tokenB and tokenC. Will return 0's if there is nothing invested
-     */
-    function getRatios(
-        uint256 startingA,
-        uint256 currentA,
-        uint256 startingB,
-        uint256 currentB,
-        uint256 startingC,
-        uint256 currentC
-    ) public pure returns (uint256 _a, uint256 _b, uint256 _c) {
-        unchecked {
-            _a = (currentA * RATIO_PRECISION) / startingA;
-            _b = (currentB * RATIO_PRECISION) / startingB;
-            _c = (currentC * RATIO_PRECISION) / startingC;
-        }
-    }
-
-    /*
-    * @notice 
-    *   Internal function called when a new position has been opened to store the relative weights of each token invested
-    *   uses the most recent oracle price to get the dollar value of the amount invested. This is so the rebalance function
-    *   can work with different dollar amounts invested upon lp creation
-    * @param investedA, the amount of tokenA that was invested
-    * @param investedB, the amount of tokenB that was invested
-    * @param investedC, the amoun of tokenC that was invested
-    * @return, the relative weight for each token expressed as 1e18
-    */
-    function getWeights(
-        uint256 investedA,
-        uint256 investedB,
-        uint256 investedC
-    ) public view returns (uint256 wA, uint256 wB, uint256 wC) {
-        ITripod tripod = ITripod(address(this));
-        unchecked {
-            uint256 adjustedA = getOraclePrice(tripod.tokenA(), investedA);
-            uint256 adjustedB = getOraclePrice(tripod.tokenB(), investedB);
-            uint256 adjustedC = getOraclePrice(tripod.tokenC(), investedC);
-            uint256 total = adjustedA + adjustedB + adjustedC; 
-                        
-            wA = adjustedA * RATIO_PRECISION / total;
-            wB = adjustedB * RATIO_PRECISION / total;
-            wC = adjustedC * RATIO_PRECISION / total;
-        }
-    }
-
-    /*
-    * @notice
-    *   Returns the oracle adjusted price for a specific token and amount expressed in the oracle terms of 1e8
-    *   This uses the chainlink feed Registry and returns in terms of the USD
-    * @param _token, the address of the token to get the price for
-    * @param _amount, the amount of the token we have
-    * @return USD price of the _amount of the token as 1e8
-    */
-    function getOraclePrice(address _token, uint256 _amount) public view returns(uint256) {
-        address token = _token;
-        //Adjust if we are using WETH of WBTC for chainlink to work
-        if(_token == 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) token = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-        if(_token == 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599) token = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB;
-
-        (uint80 roundId, int256 price,, uint256 updateTime, uint80 answeredInRound) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
-                token,
-                address(0x0000000000000000000000000000000000000348) // USD
-            );
-
-        require(price > 0 && updateTime != 0 && answeredInRound >= roundId);
-        //return the dollar amount to 1e8
-        return uint256(price) * _amount / (10 ** IERC20Extended(_token).decimals());
-    }
-
-    /*
-    * @notice
-    *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
-    *   in comparision to the amounts the started with, i.e. return the same % return
-    * @return uint that corresponds to what action Tripod should take, 0 means no swaps,
-    *   1 means swap one token to the other two and 2 means swap two to the other one
-    *   The tokens are returned in order of how they should be swapped
-    */
-    function rebalance() public view returns(uint8, address, address, address){
-        ITripod tripod = ITripod(address(this));
-        //We use the tokens struct to hold our variables and avoid stack to deep
-        Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
-
-        (tokens.ratioA, tokens.ratioB, tokens.ratioC) = getRatios(
-                    tripod.invested(tokens.tokenA),
-                    tripod.balanceOfA(),
-                    tripod.invested(tokens.tokenB),
-                    tripod.balanceOfB(),
-                    tripod.invested(tokens.tokenC),
-                    tripod.balanceOfC()
-                );
-        
-        //If they are all the same or very close we dont need to do anything
-        if(isCloseEnough(tokens.ratioA, tokens.ratioB) && isCloseEnough(tokens.ratioB, tokens.ratioC)) {
-            //Return a 0 for direction to do nothing
-            return(0, tokens.tokenA, tokens.tokenB, tokens.tokenC);
-        }
-        // Calculate the average ratio. Could be at a loss does not matter here
-        uint256 avgRatio;
-        unchecked{
-            avgRatio = (tokens.ratioA * tripod.investedWeight(tokens.tokenA) + 
-                            tokens.ratioB * tripod.investedWeight(tokens.tokenB) + 
-                                tokens.ratioC * tripod.investedWeight(tokens.tokenC)) / 
-                                    RATIO_PRECISION;
-        }
-        //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
-        //If two are higher than the average each has its diff traded to the third
-        //We know all three cannot be above the avg
-        //This flow allows us to keep track of exactly what tokens need to be swapped from and to 
-        //as well as how much with little extra memory/storage used and a max of 3 if() checks
-        if(tokens.ratioA > avgRatio) {
-
-            if (tokens.ratioB > avgRatio) {
-                //Swapping A and B -> C
-                return(2, tokens.tokenA, tokens.tokenB, tokens.tokenC);
-            } else if (tokens.ratioC > avgRatio) {
-                //swapping A and C -> B
-                return(2, tokens.tokenA, tokens.tokenC, tokens.tokenB);
-            } else {
-                //Swapping A -> B and C
-                return(1, tokens.tokenA, tokens.tokenB, tokens.tokenC);
-            }
-            
-        } else if (tokens.ratioB > avgRatio) {
-            //We know A is below avg so we just need to check C
-            if (tokens.ratioC > avgRatio) {
-                //Swap B and C -> A
-                return(2, tokens.tokenB, tokens.tokenC, tokens.tokenA);
-            } else {
-                //swapping B -> C and A
-                return(1, tokens.tokenB, tokens.tokenA, tokens.tokenC);
-            }
-
-        } else {
-            //We know A and B are below so C has to be the only one above the avg
-            //swap C -> A and B
-            return(1, tokens.tokenC, tokens.tokenA, tokens.tokenB);
-        }
-    }
-
-    /*
-     * @notice
-     *  Function estimating the current assets in the tripod, taking into account:
-     * - current balance of tokens in the LP
-     * - pending rewards from the LP (if any)
-     * - hedge profit (if any)
-     * - rebalancing of tokens to maintain token ratios
-     * @return estimated tokenA tokenB and tokenC balances
-     */
-    function estimatedTotalAssetsAfterBalance()
-        public
-        view
-        returns (uint256, uint256, uint256)
-    {
-        ITripod tripod = ITripod(address(this));
-        // Current status of tokens in LP (includes potential IL)
-        (uint256 _aBalance, uint256 _bBalance, uint256 _cBalance) = tripod.balanceOfTokensInLP();
-
-        // Add remaining balance in tripod (if any)
-        unchecked{
-            _aBalance += tripod.balanceOfA();
-            _bBalance += tripod.balanceOfB();
-            _cBalance += tripod.balanceOfC();
-        }
-
-        // Include rewards (swapping them if not tokenA or tokenB)
-        uint256[] memory _rewardsPending = tripod.pendingRewards();
-        address[] memory _rewardTokens = tripod.getRewardTokens();
-        address reward;
-        for (uint256 i; i < _rewardsPending.length; ++i) {
-            reward = _rewardTokens[i];
-            if (reward == tripod.tokenA()) {
-                _aBalance += _rewardsPending[i];
-            } else if (reward == tripod.tokenB()) {
-                _bBalance += _rewardsPending[i];
-            } else if (reward == tripod.tokenC()) {
-                _cBalance += _rewardsPending[i];
-            } else if (_rewardsPending[i] != 0) {
-                //If we are using the reference token swap to that otherwise use A
-                address swapTo = tripod.usingReference() ? tripod.referenceToken() : tripod.tokenA();
-                uint256 outAmount = tripod.quote(
-                    reward,
-                    swapTo,
-                    _rewardsPending[i]
-                );
-
-                if (swapTo == tripod.tokenA()) { 
-                    _aBalance += outAmount;
-                } else if (swapTo == tripod.tokenB()) {
-                    _bBalance += outAmount;
-                } else if (swapTo == tripod.tokenC()) {
-                    _cBalance += outAmount;
-                }
-            }
-        }
-        return quoteRebalance(_aBalance, _bBalance, _cBalance);
-    }
-
-    /*
-    * @notice 
-    *    This function is a fucking disaster.
-    *    But it works...
-    */
-    function quoteRebalance(
-        uint256 startingA,
-        uint256 startingB,
-        uint256 startingC
-    ) public view returns(uint256, uint256, uint256) {
-        ITripod tripod = ITripod(address(this));
-        //Use tokens struct to avoid stack to deep error
-        Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
-
-        //We cannot rebalance with a 0 starting position, should only be applicable if called when everything is 0 so just return
-        if(tripod.invested(tokens.tokenA) == 0 || tripod.invested(tokens.tokenB) == 0 || tripod.invested(tokens.tokenC) == 0) {
-            return (startingA, startingB, startingC);
-        }
-
-        (tokens.ratioA, tokens.ratioB, tokens.ratioC) = getRatios(
-                    tripod.invested(tokens.tokenA),
-                    startingA,
-                    tripod.invested(tokens.tokenB),
-                    startingB,
-                    tripod.invested(tokens.tokenC),
-                    startingC
-                );
-        
-        //If they are all the same or very close we dont need to do anything
-        if(isCloseEnough(tokens.ratioA, tokens.ratioB) && isCloseEnough(tokens.ratioB, tokens.ratioC)) {
-            return(startingA, startingB, startingC);
-        }
-        // Calculate the average ratio. Could be at a loss does not matter here
-        uint256 avgRatio;
-        unchecked{
-            avgRatio = (tokens.ratioA * tripod.investedWeight(tokens.tokenA) + 
-                            tokens.ratioB * tripod.investedWeight(tokens.tokenB) + 
-                                tokens.ratioC * tripod.investedWeight(tokens.tokenC)) / 
-                                    RATIO_PRECISION;
-        }
-        
-        uint256 change0;
-        uint256 change1;
-        uint256 change2;
-        RebalanceInfo memory info;
-        //See Rebalance() for explanation
-        if(tokens.ratioA > avgRatio) {
-            if (tokens.ratioB > avgRatio) {
-                //Swapping A and B -> C
-                info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
-                (change0, change1, change2) = 
-                    quoteSwapTwoToOne(tripod, info, tokens.tokenA, tokens.tokenB, tokens.tokenC);
-                return ((startingA - change0), 
-                            (startingB - change1), 
-                                (startingC + change2));
-            } else if (tokens.ratioC > avgRatio) {
-                //swapping A and C -> B
-                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
-                (change0, change1, change2) = 
-                    quoteSwapTwoToOne(tripod, info, tokens.tokenA, tokens.tokenC, tokens.tokenB);
-                return ((startingA - change0), 
-                            (startingB + change2), 
-                                (startingC - change1));
-            } else {
-                //Swapping A -> B and C
-                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
-                (change0, change1, change2) = 
-                    quoteSwapOneToTwo(tripod, info, tokens.tokenA, tokens.tokenB, tokens.tokenC);
-                return ((startingA - change0), 
-                            (startingB + change1), 
-                                (startingC + change2));
-            }
-        } else if (tokens.ratioB > avgRatio) {
-            //We know A is below avg so we just need to check C
-            if (tokens.ratioC > avgRatio) {
-                //Swap B and C -> A
-                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
-                (change0, change1, change2) = 
-                    quoteSwapTwoToOne(tripod, info, tokens.tokenB, tokens.tokenC, tokens.tokenA);
-                return ((startingA + change2), 
-                            (startingB - change0), 
-                                (startingC - change1));
-            } else {
-                //swapping B -> A and C
-                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
-                (change0, change1, change2) = 
-                    quoteSwapOneToTwo(tripod, info, tokens.tokenB, tokens.tokenA, tokens.tokenC);
-                return ((startingA + change1), 
-                            (startingB - change0), 
-                                (startingC + change2));
-            }
-        } else {
-            //We know A and B are below so C has to be the only one above the avg
-            //swap C -> A and B
-            info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
-            (change0, change1, change2) = 
-                quoteSwapOneToTwo(tripod, info, tokens.tokenC, tokens.tokenA, tokens.tokenB);
-            return ((startingA + change1), 
-                        (startingB + change2), 
-                            (startingC - change0));
-        }   
-    }
-    
-    
-    /*
-     * @notice
-     *  Function to be called during mock rebalancing.
-     *  This will quote swapping the extra tokens from the one that has returned the highest amount to the other two
-     *  in relation to what they need attempting to make everything as equal as possible
-     *  will return the absolute changes expected for each token, accounting will take place in parent function
-     * @param info, struct of all needed info OF token addresses and amounts
-     * @param toSwapToken, the token we will be swapping from to the other two
-     * @param token0Address, address of one of the tokens we are swapping to
-     * @param token1Address, address of the second token we are swapping to
-     * @return negative change in toSwapToken, positive change for token0, positive change for token1
-    */
-    function quoteSwapOneToTwo(
-        ITripod tripod,
-        RebalanceInfo memory info, 
-        address toSwapFrom, 
-        address toSwapTo0, 
-        address toSwapTo1
-    ) public view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
-        uint256 swapTo0;
-        uint256 swapTo1;
-
-        unchecked {
-            uint256 precision = 10 ** IERC20Extended(toSwapFrom).decimals();
-            
-            uint256 p;
-
-            (n, p) = getNandP(RebalanceInfo(
-                precision,
-                tripod.invested(toSwapFrom),
-                info.a1,
-                tripod.invested(toSwapTo0),
-                info.b1,
-                tripod.quote(toSwapFrom, toSwapTo0, precision),
-                0,
-                tripod.invested(toSwapTo1),
-                info.c1,
-                tripod.quote(toSwapFrom, toSwapTo1, precision),
-                0
-            ));
-
-            swapTo0 = n * p / RATIO_PRECISION;
-            //To assure we dont sell to much 
-            swapTo1 = n - swapTo0;
-        }
-
-        amountOut = tripod.quote(
-            toSwapFrom, 
-            toSwapTo0, 
-            swapTo0
-        );
-
-        amountOut2 = tripod.quote(
-            toSwapFrom, 
-            toSwapTo1, 
-            swapTo1
-        );
-    }   
-
-    /*
-     * @notice
-     *  Function to be called during rebalancing.
-     *  This will swap the extra tokens from the two that returned raios higher than target return to the other one
-     *  in relation to what they gained attempting to make everything as equal as possible
-     *  will return the absolute changes expected for each token, accounting will take place in parent function
-     * @param info, struct of all needed info OF token addresses and amounts
-     * @param token0Address, address of one of the tokens we are swapping from
-     * @param token1Address, address of the second token we are swapping from
-     * @param toTokenAddress, address of the token we are swapping to
-     * @return negative change for token0, negative change for token1, positive change for toTokenAddress
-    */
-    function quoteSwapTwoToOne(
-        ITripod tripod,
-        RebalanceInfo memory info,
-        address token0Address,
-        address token1Address,
-        address toTokenAddress
-    ) public view returns(uint256, uint256, uint256) {
-
-        (uint256 toSwapFrom0, uint256 toSwapFrom1) =getNbAndNc(RebalanceInfo(
-            0,
-            tripod.invested(toTokenAddress),
-            info.a1,
-            tripod.invested(token0Address),
-            info.b1,
-            tripod.quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
-            10 ** IERC20Extended(token0Address).decimals(),
-            tripod.invested(token1Address),
-            info.c1,
-            tripod.quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
-            10 ** IERC20Extended(token1Address).decimals()
-        ));
-
-        uint256 amountOut = tripod.quote(
-            token0Address, 
-            toTokenAddress, 
-            toSwapFrom0
-        );
-
-        uint256 amountOut2 =tripod. quote(
-            token1Address, 
-            toTokenAddress, 
-            toSwapFrom1
-        );
-
-        return (toSwapFrom0, toSwapFrom1, (amountOut + amountOut2));
-    }
-    
-    /*
-    * @notice
-    *   Function used to determine wether or not the ratios between the 3 tokens are close enough 
-    *       that it is not worth the cost to do any rebalancing
-    * @param ratio0, the current ratio of the first token to check
-    * @param ratio1, the current ratio of the second token to check
-    * @return boolean repersenting true if the ratios are withen the range to not need to rebalance 
-    */
-    function isCloseEnough(uint256 ratio0, uint256 ratio1) public pure returns(bool) {
-        if(ratio0 == 0 && ratio1 == 0) return true;
-
-        uint256 delta = ratio0 > ratio1 ? ratio0 - ratio1 : ratio1 - ratio0;
-        //We wont rebalance withen .01
-        uint256 maxRelDelta = ratio1 / 10_000;
-
-        if (delta < maxRelDelta) return true;
-    }
-
-}
 
 
 
@@ -1390,7 +750,7 @@ interface IVault is IERC20 {
 }
 
 
-interface ProviderStrategy {
+interface IProviderStrategy {
     function vault() external view returns (IVault);
 
     function keeper() external view returns (address);
@@ -1402,6 +762,700 @@ interface ProviderStrategy {
     function harvest() external;
 }
 
+interface ITripod{
+    function pool() external view returns(address);
+    function tokenA() external view returns (address);
+    function providerA() external view returns (IProviderStrategy);
+    function balanceOfA() external view returns(uint256);
+    function tokenB() external view returns (address);
+    function providerB() external view returns (IProviderStrategy);
+    function balanceOfB() external view returns(uint256);
+    function tokenC() external view returns (address);
+    function providerC() external view returns (IProviderStrategy);
+    function balanceOfC() external view returns(uint256);
+    function invested(address) external view returns(uint256);
+    function totalLpBalance() external view returns(uint256);
+    function investedWeight(address)external view returns(uint256);
+    function quote(address, address, uint256) external view returns(uint256);
+    function usingReference() external view returns(bool);
+    function referenceToken() external view returns(address);
+    function minAmountToSell() external view returns(uint256);
+    function balanceOfTokensInLP() external view returns(uint256, uint256, uint256);
+    function getRewardTokens() external view returns(address[] memory);
+    function pendingRewards() external view returns(uint256[] memory);
+    function dontInvestWant() external view returns(bool);
+}
+
+interface IBalancerTripod is ITripod{
+    //Struct for each bb pool that makes up the main pool
+    struct PoolInfo {
+        address token;
+        address bbPool;
+        bytes32 poolId;
+    }
+    function poolInfo(uint256) external view returns(PoolInfo memory);
+    function curveIndex(address) external view returns(int128);
+    function poolId() external view returns(bytes32);
+    function toSwapToIndex() external view returns(uint256); 
+    function toSwapToPoolId() external view returns(bytes32);
+}
+
+
+
+/// @title Tripod Math
+/// @notice Contains the Rebalancing Logic and Math for the Tripod Base. Used during both the rebalance and quote rebalance functions
+library TripodMath {
+
+    /*
+    * @notice
+    *   The rebalancing math aims to have each tokens relative return be equal after the rebalance irregardless of the strating weights or exchange rates
+    *   These functions are called during swapOneToTwo() or swapTwoToOne() in the Tripod.sol https://github.com/Schlagonia/Tripod/blob/master/src/Tripod.sol
+    *   All math was adopted from the original joint strategies https://github.com/fp-crypto/joint-strategy
+
+        All equations will use the following variables:
+            a0 = The invested balance of the first token
+            a1 = The ending balance of the first token
+            b0 = The invested balance of the second token
+            b1 = The ending balance of the second token
+            c0 = the invested balance of the third token
+            c1 = The ending balance of the third token
+            eOfB = The exchange rate of either a => b or b => a depending on which way we are swapping
+            eOfC = The exchange rate of either a => c or c => a depending on which way we are swapping
+            precision = 10 ** first token decimals
+            precisionB = 10 ** second token decimals
+            precisionC = 10 ** third token decimals
+
+            Variables specific to swapOneToTwo()
+            n = The amount of a token we will be selling
+            p = The % of n we will be selling from a => b
+
+            Variables specific to swapTwoToOne()
+            nb = The amount of b we will be swapping to a
+            nc = The amount of c we will be swapping to a 
+
+        The starting equations that all of the following are derived from is:
+
+         a1 - n       b1 + eOfB*n*p      c1 + eOfC*n*(1-p) 
+        --------  =  --------------  =  -------------------
+           a0              b0                   c0
+
+    */
+
+    struct RebalanceInfo {
+        uint256 precisionA;
+        uint256 a0;
+        uint256 a1;
+        uint256 b0;
+        uint256 b1;
+        uint256 eOfB;
+        uint256 precisionB;
+        uint256 c0;
+        uint256 c1;
+        uint256 eOfC;
+        uint256 precisionC;
+    }   
+
+    struct Tokens {
+        address tokenA;
+        uint256 ratioA;
+        address tokenB;
+        uint256 ratioB;
+        address tokenC;
+        uint256 ratioC;
+    }
+    
+    uint256 private constant RATIO_PRECISION = 1e18;
+    /*
+    * @notice
+    *   Internal function to be called during swapOneToTwo to return n: the amount of a to sell and p: the % of n to sell to b
+    * @param info, Rebalance info struct with all needed variables
+    * @return n, The amount of a to sell
+    * @return p, The percent of a we will sell to b repersented as 1e18. i.e. 50% == .5e18
+    */
+    function getNandP(RebalanceInfo memory info) public pure returns(uint256 n, uint256 p) {
+        p = getP(info);
+        n = getN(info, p);
+    }
+
+    /*
+    * @notice
+    *   Internal function used to calculate the percent of n that will be sold to b
+    *   p is repersented as 1e18
+    * @param info, RebalanceInfo stuct
+    * @return the percent of a to sell to b as 1e18
+    */
+    function getP(RebalanceInfo memory info) public pure returns (uint256 p) {
+        /*
+        *             a1*b0*eOfC + b0c1 - b1c0 - a0*b1*eOfC
+        *   p = ----------------------------------------------------
+        *        a1*c0*eOfB + a1*b0*eOfC - a0*c1*eOfB - a0*b1*eOfC
+        */
+        unchecked {
+            //pre-calculate a couple of parts that are used twice
+            //var1 = a0*b1*eOfC
+            uint256 var1 = info.a0 * info.b1 * info.eOfC / info.precisionA;
+            //var2 = a1*b0*eOfC
+            uint256 var2 = info.a1 * info.b0 * info.eOfC / info.precisionA;
+
+            uint256 numerator = var2 + (info.b0 * info.c1) - (info.b1 * info.c0) - var1;
+
+            uint256 denominator = 
+                (info.a1 * info.c0 * info.eOfB / info.precisionA) + 
+                    var2 - 
+                        (info.a0 * info.c1 * info.eOfB / info.precisionA) - 
+                            var1;
+    
+            p = numerator * 1e18 / denominator;
+        }
+    }
+
+    /*
+    * @notice
+    *   Internal function used to calculate the amount of a to sell once p has been calculated
+    *   Converts all uint's to int's because the numerator will be negative
+    * @param info, RebalanceInfo stuct
+    * @param p, % calculated to of b to sell to a in 1e18
+    * @return The amount of a to sell
+    */
+    function getN(RebalanceInfo memory info, uint256 p) public pure returns(uint256) {
+        /*
+        *          (a1*b0) - (a0*b1)  
+        *    n = -------------------- 
+        *           b0 + eOfB*a0*P
+        */
+        unchecked{
+            uint256 numerator = 
+                (info.a1 * info.b0) -
+                    (info.a0 * info.b1);
+
+            uint256 denominator = 
+                (info.b0 * 1e18) + 
+                    (info.eOfB * info.a0 / info.precisionA * p);
+
+            return numerator * 1e18 / denominator;
+        }
+    }
+
+    /*
+    * @notice
+    *   Internal function used to calculate the _nb: the amount of b to sell to a
+    *       and nc : the amount of c to sell to a. For the swapTwoToOne() function.
+    *   The calculations for both b and c use the same denominator and the numerator is the same consturction but the variables for b or c are swapped 
+    * @param info, RebalanceInfo stuct
+    * @return _nb, the amount of b to sell to a in terms of b
+    * @return nc, the amount of c to sell to a in terms of c 
+    */
+    function getNbAndNc(RebalanceInfo memory info) public pure returns(uint256 nb, uint256 nc) {
+        /*
+        *          a0*x1 + y0*eOfy*x1 - a1*x0 - y1*eOfy*x0
+        *   nx = ------------------------------------------
+        *               a0 + eOfc*c0 + b0*eOfb
+        */
+        unchecked {
+            uint256 numeratorB = 
+                (info.a0 * info.b1) + 
+                    (info.c0 * info.eOfC * info.b1 / info.precisionC) - 
+                        (info.a1 * info.b0) - 
+                            (info.c1 * info.eOfC * info.b0 / info.precisionC);
+
+            uint256 numeratorC = 
+                (info.a0 * info.c1) + 
+                    (info.b0 * info.eOfB * info.c1 / info.precisionB) - 
+                        (info.a1 * info.c0) - 
+                            (info.b1 * info.eOfB * info.c0 / info.precisionB);
+
+            uint256 denominator = 
+                info.a0 + 
+                    (info.eOfC * info.c0 / info.precisionC) + 
+                        (info.b0 * info.eOfB / info.precisionB);
+
+            nb = numeratorB / denominator;
+            nc = numeratorC / denominator;
+        }
+    }
+
+    /*
+     * @notice
+     *  Function available publicly estimating the balancing ratios for the tokens in the form:
+     * ratio = currentBalance / invested Balance
+     * @param startingA, the invested balance of TokenA
+     * @param currentA, current balance of tokenA
+     * @param startingB, the invested balance of TokenB
+     * @param currentB, current balance of tokenB
+     * @param startingC, the invested balance of TokenC
+     * @param currentC, current balance of tokenC
+     * @return _a, _b _c, ratios for tokenA tokenB and tokenC. Will return 0's if there is nothing invested
+     */
+    function getRatios(
+        uint256 startingA,
+        uint256 currentA,
+        uint256 startingB,
+        uint256 currentB,
+        uint256 startingC,
+        uint256 currentC
+    ) public pure returns (uint256 _a, uint256 _b, uint256 _c) {
+        unchecked {
+            _a = (currentA * RATIO_PRECISION) / startingA;
+            _b = (currentB * RATIO_PRECISION) / startingB;
+            _c = (currentC * RATIO_PRECISION) / startingC;
+        }
+    }
+
+    /*
+    * @notice 
+    *   Internal function called when a new position has been opened to store the relative weights of each token invested
+    *   uses the most recent oracle price to get the dollar value of the amount invested. This is so the rebalance function
+    *   can work with different dollar amounts invested upon lp creation
+    * @param investedA, the amount of tokenA that was invested
+    * @param investedB, the amount of tokenB that was invested
+    * @param investedC, the amoun of tokenC that was invested
+    * @return, the relative weight for each token expressed as 1e18
+    */
+    function getWeights(
+        uint256 investedA,
+        uint256 investedB,
+        uint256 investedC
+    ) public view returns (uint256 wA, uint256 wB, uint256 wC) {
+        ITripod tripod = ITripod(address(this));
+        unchecked {
+            uint256 adjustedA = getOraclePrice(tripod.tokenA(), investedA);
+            uint256 adjustedB = getOraclePrice(tripod.tokenB(), investedB);
+            uint256 adjustedC = getOraclePrice(tripod.tokenC(), investedC);
+            uint256 total = adjustedA + adjustedB + adjustedC; 
+                        
+            wA = adjustedA * RATIO_PRECISION / total;
+            wB = adjustedB * RATIO_PRECISION / total;
+            wC = adjustedC * RATIO_PRECISION / total;
+        }
+    }
+
+    /*
+    * @notice
+    *   Returns the oracle adjusted price for a specific token and amount expressed in the oracle terms of 1e8
+    *   This uses the chainlink feed Registry and returns in terms of the USD
+    * @param _token, the address of the token to get the price for
+    * @param _amount, the amount of the token we have
+    * @return USD price of the _amount of the token as 1e8
+    */
+    function getOraclePrice(address _token, uint256 _amount) public view returns(uint256) {
+        address token = _token;
+        //Adjust if we are using WETH of WBTC for chainlink to work
+        if(_token == 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) token = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+        if(_token == 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599) token = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB;
+
+        (uint80 roundId, int256 price,, uint256 updateTime, uint80 answeredInRound) = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf).latestRoundData(
+                token,
+                address(0x0000000000000000000000000000000000000348) // USD
+            );
+
+        require(price > 0 && updateTime != 0 && answeredInRound >= roundId);
+        //return the dollar amount to 1e8
+        return uint256(price) * _amount / (10 ** IERC20Extended(_token).decimals());
+    }
+
+    /*
+    * @notice
+    *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
+    *   in comparision to the amounts the started with, i.e. return the same % return
+    * @return uint8 that corresponds to what action Tripod should take, 0 means no swaps,
+    *   1 means swap one token to the other two and 2 means swap two to the other one
+    *   The tokens are returned in order of how they should be swapped
+    */
+    function rebalance() public view returns(uint8, address, address, address){
+        ITripod tripod = ITripod(address(this));
+        //We use the tokens struct to cache our variables and avoid stack to deep
+        Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
+
+        (tokens.ratioA, tokens.ratioB, tokens.ratioC) = getRatios(
+                    tripod.invested(tokens.tokenA),
+                    tripod.balanceOfA(),
+                    tripod.invested(tokens.tokenB),
+                    tripod.balanceOfB(),
+                    tripod.invested(tokens.tokenC),
+                    tripod.balanceOfC()
+                );
+        
+        //If they are all the same or very close we dont need to do anything
+        if(isCloseEnough(tokens.ratioA, tokens.ratioB) && isCloseEnough(tokens.ratioB, tokens.ratioC)) {
+            //Return a 0 for direction to do nothing
+            return(0, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+        }
+        // Calculate the average ratio. Could be at a loss does not matter here
+        uint256 avgRatio;
+        unchecked{
+            avgRatio = (tokens.ratioA * tripod.investedWeight(tokens.tokenA) + 
+                            tokens.ratioB * tripod.investedWeight(tokens.tokenB) + 
+                                tokens.ratioC * tripod.investedWeight(tokens.tokenC)) / 
+                                    RATIO_PRECISION;
+        }
+        //If only one is higher than the average ratio, then ratioX - avgRatio is split between the other two in relation to their diffs
+        //If two are higher than the average each has its diff traded to the third
+        //We know all three cannot be above the avg
+        //This flow allows us to keep track of exactly what tokens need to be swapped from and to 
+        //as well as how much with little extra memory/storage used and a max of 3 if() checks
+        if(tokens.ratioA > avgRatio) {
+
+            if (tokens.ratioB > avgRatio) {
+                //Swapping A and B -> C
+                return(2, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+            } else if (tokens.ratioC > avgRatio) {
+                //swapping A and C -> B
+                return(2, tokens.tokenA, tokens.tokenC, tokens.tokenB);
+            } else {
+                //Swapping A -> B and C
+                return(1, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+            }
+            
+        } else if (tokens.ratioB > avgRatio) {
+            //We know A is below avg so we just need to check C
+            if (tokens.ratioC > avgRatio) {
+                //Swap B and C -> A
+                return(2, tokens.tokenB, tokens.tokenC, tokens.tokenA);
+            } else {
+                //swapping B -> C and A
+                return(1, tokens.tokenB, tokens.tokenA, tokens.tokenC);
+            }
+
+        } else {
+            //We know A and B are below so C has to be the only one above the avg
+            //swap C -> A and B
+            return(1, tokens.tokenC, tokens.tokenA, tokens.tokenB);
+        }
+    }
+
+    /*
+     * @notice
+     *  Function estimating the current assets in the tripod, taking into account:
+     * - current balance of tokens in the LP
+     * - pending rewards from the LP (if any)
+     * - hedge profit (if any)
+     * - rebalancing of tokens to maintain token ratios
+     * @return estimated tokenA tokenB and tokenC balances
+     */
+    function estimatedTotalAssetsAfterBalance()
+        public
+        view
+        returns (uint256, uint256, uint256)
+    {
+        ITripod tripod = ITripod(address(this));
+        // Current status of tokens in LP (includes potential IL)
+        (uint256 _aBalance, uint256 _bBalance, uint256 _cBalance) = tripod.balanceOfTokensInLP();
+
+        // Add remaining balance in tripod (if any)
+        unchecked{
+            _aBalance += tripod.balanceOfA();
+            _bBalance += tripod.balanceOfB();
+            _cBalance += tripod.balanceOfC();
+        }
+
+        // Include rewards (swapping them if not one of the LP tokens)
+        uint256[] memory _rewardsPending = tripod.pendingRewards();
+        address[] memory _rewardTokens = tripod.getRewardTokens();
+        address reward;
+        for (uint256 i; i < _rewardsPending.length; ++i) {
+            reward = _rewardTokens[i];
+            if (reward == tripod.tokenA()) {
+                _aBalance += _rewardsPending[i];
+            } else if (reward == tripod.tokenB()) {
+                _bBalance += _rewardsPending[i];
+            } else if (reward == tripod.tokenC()) {
+                _cBalance += _rewardsPending[i];
+            } else if (_rewardsPending[i] != 0) {
+                //If we are using the reference token swap to that otherwise use A
+                address swapTo = tripod.usingReference() ? tripod.referenceToken() : tripod.tokenA();
+                uint256 outAmount = tripod.quote(
+                    reward,
+                    swapTo,
+                    _rewardsPending[i]
+                );
+
+                if (swapTo == tripod.tokenA()) { 
+                    _aBalance += outAmount;
+                } else if (swapTo == tripod.tokenB()) {
+                    _bBalance += outAmount;
+                } else if (swapTo == tripod.tokenC()) {
+                    _cBalance += outAmount;
+                }
+            }
+        }
+        return quoteRebalance(_aBalance, _bBalance, _cBalance);
+    }
+
+    /*
+    * @notice 
+    *    This function is a fucking disaster.
+    *    But it works...
+    */
+    function quoteRebalance(
+        uint256 startingA,
+        uint256 startingB,
+        uint256 startingC
+    ) public view returns(uint256, uint256, uint256) {
+        ITripod tripod = ITripod(address(this));
+        //Use tokens struct to avoid stack to deep error
+        Tokens memory tokens = Tokens(tripod.tokenA(), 0, tripod.tokenB(), 0, tripod.tokenC(), 0);
+
+        //We cannot rebalance with a 0 starting position, should only be applicable if called when everything is 0 so just return
+        if(tripod.invested(tokens.tokenA) == 0 || tripod.invested(tokens.tokenB) == 0 || tripod.invested(tokens.tokenC) == 0) {
+            return (startingA, startingB, startingC);
+        }
+
+        (tokens.ratioA, tokens.ratioB, tokens.ratioC) = getRatios(
+                    tripod.invested(tokens.tokenA),
+                    startingA,
+                    tripod.invested(tokens.tokenB),
+                    startingB,
+                    tripod.invested(tokens.tokenC),
+                    startingC
+                );
+        
+        //If they are all the same or very close we dont need to do anything
+        if(isCloseEnough(tokens.ratioA, tokens.ratioB) && isCloseEnough(tokens.ratioB, tokens.ratioC)) {
+            return(startingA, startingB, startingC);
+        }
+        // Calculate the average ratio. Could be at a loss does not matter here
+        uint256 avgRatio;
+        unchecked{
+            avgRatio = (tokens.ratioA * tripod.investedWeight(tokens.tokenA) + 
+                            tokens.ratioB * tripod.investedWeight(tokens.tokenB) + 
+                                tokens.ratioC * tripod.investedWeight(tokens.tokenC)) / 
+                                    RATIO_PRECISION;
+        }
+        
+        uint256 change0;
+        uint256 change1;
+        uint256 change2;
+        RebalanceInfo memory info;
+        //See Rebalance() for explanation
+        if(tokens.ratioA > avgRatio) {
+            if (tokens.ratioB > avgRatio) {
+                //Swapping A and B -> C
+                info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
+                (change0, change1, change2) = 
+                    _quoteSwapTwoToOne(tripod, info, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+                return ((startingA - change0), 
+                            (startingB - change1), 
+                                (startingC + change2));
+            } else if (tokens.ratioC > avgRatio) {
+                //swapping A and C -> B
+                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
+                (change0, change1, change2) = 
+                    _quoteSwapTwoToOne(tripod, info, tokens.tokenA, tokens.tokenC, tokens.tokenB);
+                return ((startingA - change0), 
+                            (startingB + change2), 
+                                (startingC - change1));
+            } else {
+                //Swapping A -> B and C
+                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
+                (change0, change1, change2) = 
+                    _quoteSwapOneToTwo(tripod, info, tokens.tokenA, tokens.tokenB, tokens.tokenC);
+                return ((startingA - change0), 
+                            (startingB + change1), 
+                                (startingC + change2));
+            }
+        } else if (tokens.ratioB > avgRatio) {
+            //We know A is below avg so we just need to check C
+            if (tokens.ratioC > avgRatio) {
+                //Swap B and C -> A
+                info = RebalanceInfo(0, 0, startingA, 0, startingB, 0, 0, 0, startingC, 0, 0);
+                (change0, change1, change2) = 
+                    _quoteSwapTwoToOne(tripod, info, tokens.tokenB, tokens.tokenC, tokens.tokenA);
+                return ((startingA + change2), 
+                            (startingB - change0), 
+                                (startingC - change1));
+            } else {
+                //swapping B -> A and C
+                info = RebalanceInfo(0, 0, startingB, 0, startingA, 0, 0, 0, startingC, 0, 0);
+                (change0, change1, change2) = 
+                    _quoteSwapOneToTwo(tripod, info, tokens.tokenB, tokens.tokenA, tokens.tokenC);
+                return ((startingA + change1), 
+                            (startingB - change0), 
+                                (startingC + change2));
+            }
+        } else {
+            //We know A and B are below so C has to be the only one above the avg
+            //swap C -> A and B
+            info = RebalanceInfo(0, 0, startingC, 0, startingA, 0, 0, 0, startingB, 0, 0);
+            (change0, change1, change2) = 
+                _quoteSwapOneToTwo(tripod, info, tokens.tokenC, tokens.tokenA, tokens.tokenB);
+            return ((startingA + change1), 
+                        (startingB + change2), 
+                            (startingC - change0));
+        }   
+    }
+    
+    
+    /*
+     * @notice
+     *  Function to be called during mock rebalancing.
+     *  This will quote swapping the extra tokens from the one that has returned the highest amount to the other two
+     *  in relation to what they need attempting to make everything as equal as possible
+     *  will return the absolute changes expected for each token, accounting will take place in parent function
+     * @param tripod, the instance of the tripod to use
+     * @param info, struct of all needed info OF token addresses and amounts
+     * @param toSwapToken, the token we will be swapping from to the other two
+     * @param token0Address, address of one of the tokens we are swapping to
+     * @param token1Address, address of the second token we are swapping to
+     * @return negative change in toSwapToken, positive change for token0, positive change for token1
+    */
+    function _quoteSwapOneToTwo(
+        ITripod tripod,
+        RebalanceInfo memory info, 
+        address toSwapFrom, 
+        address toSwapTo0, 
+        address toSwapTo1
+    ) internal view returns (uint256 n, uint256 amountOut, uint256 amountOut2) {
+        uint256 swapTo0;
+        uint256 swapTo1;
+
+        unchecked {
+            uint256 precisionA = 10 ** IERC20Extended(toSwapFrom).decimals();
+            
+            uint256 p;
+
+            (n, p) = getNandP(RebalanceInfo({
+                precisionA : precisionA,
+                a0 : tripod.invested(toSwapFrom),
+                a1 : info.a1,
+                b0 : tripod.invested(toSwapTo0),
+                b1 : info.b1,
+                eOfB : tripod.quote(toSwapFrom, toSwapTo0, precisionA),
+                precisionB : 0, //Not needed for this calculation
+                c0 : tripod.invested(toSwapTo1),
+                c1 : info.c1,
+                eOfC : tripod.quote(toSwapFrom, toSwapTo1, precisionA),
+                precisionC : 0 // Not needed
+            }));
+
+            swapTo0 = n * p / RATIO_PRECISION;
+            //To assure we dont sell to much 
+            swapTo1 = n - swapTo0;
+        }
+
+        amountOut = tripod.quote(
+            toSwapFrom, 
+            toSwapTo0, 
+            swapTo0
+        );
+
+        amountOut2 = tripod.quote(
+            toSwapFrom, 
+            toSwapTo1, 
+            swapTo1
+        );
+    }   
+
+    /*
+     * @notice
+     *  Function to be called during mock rebalancing.
+     *  This will quote swap the extra tokens from the two that returned raios higher than target return to the other one
+     *  in relation to what they gained attempting to make everything as equal as possible
+     *  will return the absolute changes expected for each token, accounting will take place in parent function
+     * @param tripod, the instance of the tripod to use
+     * @param info, struct of all needed info OF token addresses and amounts
+     * @param token0Address, address of one of the tokens we are swapping from
+     * @param token1Address, address of the second token we are swapping from
+     * @param toTokenAddress, address of the token we are swapping to
+     * @return negative change for token0, negative change for token1, positive change for toTokenAddress
+    */
+    function _quoteSwapTwoToOne(
+        ITripod tripod,
+        RebalanceInfo memory info,
+        address token0Address,
+        address token1Address,
+        address toTokenAddress
+    ) internal view returns(uint256, uint256, uint256) {
+
+        (uint256 toSwapFrom0, uint256 toSwapFrom1) = 
+            getNbAndNc(RebalanceInfo({
+                precisionA : 0, //Not needed
+                a0 : tripod.invested(toTokenAddress),
+                a1 : info.a1,
+                b0 : tripod.invested(token0Address),
+                b1 : info.b1,
+                eOfB : tripod.quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
+                precisionB : 10 ** IERC20Extended(token0Address).decimals(),
+                c0 : tripod.invested(token1Address),
+                c1 : info.c1,
+                eOfC : tripod.quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
+                precisionC : 10 ** IERC20Extended(token1Address).decimals()
+            }));
+
+        uint256 amountOut = tripod.quote(
+            token0Address, 
+            toTokenAddress, 
+            toSwapFrom0
+        );
+
+        uint256 amountOut2 = tripod.quote(
+            token1Address, 
+            toTokenAddress, 
+            toSwapFrom1
+        );
+
+        return (toSwapFrom0, toSwapFrom1, (amountOut + amountOut2));
+    }
+    
+    /*
+    * @notice
+    *   Function used to determine wether or not the ratios between the 3 tokens are close enough 
+    *       that it is not worth the cost to do any rebalancing
+    * @param ratio0, the current ratio of the first token to check
+    * @param ratio1, the current ratio of the second token to check
+    * @return boolean repersenting true if the ratios are withen the range to not need to rebalance 
+    */
+    function isCloseEnough(uint256 ratio0, uint256 ratio1) public pure returns(bool) {
+        if(ratio0 == 0 && ratio1 == 0) return true;
+
+        uint256 delta = ratio0 > ratio1 ? ratio0 - ratio1 : ratio1 - ratio0;
+        //We wont rebalance withen .01
+        uint256 maxRelDelta = ratio1 / 10_000;
+
+        if (delta < maxRelDelta) return true;
+    }
+
+    /*
+    * @notice
+    *   function used internally to determine if a provider has funds available to deposit
+    *   Checks the providers want balance of the Tripod, the provider and the credit available to it
+    * @param _provider, the provider to check
+    */  
+    function hasAvailableBalance(IProviderStrategy _provider) 
+        public 
+        view 
+        returns (bool) 
+    {
+        uint256 minAmountToSell = ITripod(address(this)).minAmountToSell();
+        return 
+            _provider.balanceOfWant() > minAmountToSell ||
+                IERC20(_provider.want()).balanceOf(address(this)) > minAmountToSell ||
+                    _provider.vault().creditAvailable(address(_provider)) > minAmountToSell;
+    }
+
+    /*
+     * @notice
+     *  Function used in harvestTrigger in providers to decide wether an epoch can be started or not:
+     * - if there is an available for all three tokens but no position open, return true
+     * @return wether to start a new epoch or not
+     */
+    function shouldStartEpoch() public view returns (bool) {
+        ITripod tripod = ITripod(address(this));
+        //If we are currently invested return false
+        if(tripod.invested(tripod.tokenA()) != 0 ||
+            tripod.invested(tripod.tokenB()) != 0 || 
+                tripod.invested(tripod.tokenC()) != 0) return false;
+        
+        if(tripod.dontInvestWant()) return false;
+
+        return
+            hasAvailableBalance(tripod.providerA()) && 
+                hasAvailableBalance(tripod.providerB()) && 
+                    hasAvailableBalance(tripod.providerC());
+    }
+}
+
+
+
 interface IBaseFee {
     function isCurrentBaseFeeAcceptable() external view returns (bool);
 }
@@ -1410,7 +1464,7 @@ interface IBaseFee {
 /// @notice This is the base contract for a 3 token joint LP strategy to be used with @Yearn vaults
 ///     The contract takes tokens from 3 seperate Provider strategies each with a different token that corresponds to one of the tokens that
 ///     makes up the LP of "pool". Each harvest the Tripod will attempt to rebalance each token into an equal relative return percentage wise
-///     irrespecative of the begining weights, exchange rates or decimal differences. 
+///     irrespective of the begining weights, exchange rates or decimal differences. 
 ///
 ///     Made by Schlagania https://github.com/Schlagonia/Tripod adapted from the 2 token joint strategy https://github.com/fp-crypto/joint-strategy
 ///
@@ -1421,11 +1475,11 @@ abstract contract Tripod {
     // Constant to use in ratio calculations
     uint256 internal constant RATIO_PRECISION = 1e18;
     // Provider strategy of tokenA
-    ProviderStrategy public providerA;
+    IProviderStrategy public providerA;
     // Provider strategy of tokenB
-    ProviderStrategy public providerB;
+    IProviderStrategy public providerB;
     // Provider strategy of tokenC
-    ProviderStrategy public providerC;
+    IProviderStrategy public providerC;
 
     // Address of tokenA
     address public tokenA;
@@ -1446,7 +1500,7 @@ abstract contract Tripod {
 
     //Mapping of the Amounts that actually go into the LP position
     mapping(address => uint256) public invested;
-    //Mapping og the weights of each token when it goes in to 1e18
+    //Mapping of the weights of each token that was invested to 1e18, .33e18 == 33%
     mapping(address => uint256) public investedWeight;
 
     //Address of the Keeper for this strategy
@@ -1456,12 +1510,13 @@ abstract contract Tripod {
     bool public launchHarvest;
     // Boolean values protecting against re-investing into the pool
     bool public dontInvestWant;
-    bool public autoProtectionDisabled;
+    //bool public autoProtectionDisabled;
 
     // Thresholds to operate the strat
     uint256 public minAmountToSell;
-    uint256 public maxPercentageLoss;
+    
     uint256 public minRewardToHarvest;
+    uint256 public maxPercentageLoss;
     //Tripod version of maxReportDelay
     uint256 public maxEpochTime;
 
@@ -1497,15 +1552,15 @@ abstract contract Tripod {
 
     function isGovernance() internal view returns (bool) {
         return
-            msg.sender == providerA.vault().governance() ||
-            msg.sender == providerB.vault().governance() ||
+            msg.sender == providerA.vault().governance() &&
+            msg.sender == providerB.vault().governance() &&
             msg.sender == providerC.vault().governance();
     }
 
     function isVaultManager() internal view returns (bool) {
         return
-            msg.sender == providerA.vault().management() ||
-            msg.sender == providerB.vault().management() ||
+            msg.sender == providerA.vault().management() &&
+            msg.sender == providerB.vault().management() &&
             msg.sender == providerC.vault().management();
     }
 
@@ -1556,9 +1611,15 @@ abstract contract Tripod {
         address _pool
     ) internal virtual {
         require(address(providerA) == address(0));
-        providerA = ProviderStrategy(_providerA);
-        providerB = ProviderStrategy(_providerB);
-        providerC = ProviderStrategy(_providerC);
+        providerA = IProviderStrategy(_providerA);
+        providerB = IProviderStrategy(_providerB);
+        providerC = IProviderStrategy(_providerC);
+
+        //Make sure we have the same gov set for all Providers
+        //Make sure we have the same gov set for all Providers
+        address vaultGov = providerA.vault().governance();
+        require(vaultGov == providerB.vault().governance() && 
+                    vaultGov == providerC.vault().governance());
 
         referenceToken = _referenceToken;
         pool = _pool;
@@ -1566,7 +1627,7 @@ abstract contract Tripod {
         maxEpochTime = type(uint256).max;
 
         // NOTE: we let some loss to avoid getting locked in the position if something goes slightly wrong
-        maxPercentageLoss = RATIO_PRECISION / 1_000; // 0.10%
+        maxPercentageLoss = 1e15; // 0.10%
 
         tokenA = address(providerA.want());
         tokenB = address(providerB.want());
@@ -1579,10 +1640,8 @@ abstract contract Tripod {
         IERC20(tokenC).safeApprove(_providerC, type(uint256).max);
 
         //Check if we are using the reference token for easier swaps from rewards
-        if (tokenA == referenceToken || tokenB == referenceToken || tokenC == referenceToken) {
+        if (tokenA == _referenceToken || tokenB == _referenceToken || tokenC == _referenceToken) {
             usingReference = true;
-        } else {
-            usingReference = false;
         }
     }
 
@@ -1608,7 +1667,6 @@ abstract contract Tripod {
     * @param _minRewardToHarvest, new value to use
     * @param _minAmountToSell, new value to use
     * @param _maxEpochTime, new value to use
-    * @param _autoProtectionDisabled, new value to use
     * @param _maxPercentageLoss, new value to use
     * @param _newLaunchHarvest, bool to have keepers launch a harvest
     */
@@ -1617,7 +1675,6 @@ abstract contract Tripod {
         uint256 _minRewardToHarvest,
         uint256 _minAmountToSell,
         uint256 _maxEpochTime,
-        bool _autoProtectionDisabled,
         uint256 _maxPercentageLoss,
         bool _newLaunchHarvest
     ) external onlyVaultManagers {
@@ -1625,7 +1682,6 @@ abstract contract Tripod {
         minRewardToHarvest = _minRewardToHarvest;
         minAmountToSell = _minAmountToSell;
         maxEpochTime = _maxEpochTime;
-        autoProtectionDisabled = _autoProtectionDisabled;
         require(_maxPercentageLoss <= RATIO_PRECISION);
         maxPercentageLoss = _maxPercentageLoss;
         launchHarvest = _newLaunchHarvest;
@@ -1643,11 +1699,7 @@ abstract contract Tripod {
         if (launchHarvest) {
             launchHarvest = false;
         }
-        // Check if it needs to stop starting new epochs after finishing this one.
-        // _autoProtect is implemented in children
-        //if (_autoProtect() && !autoProtectionDisabled) {
-        //    dontInvestWant = true;
-        //}
+
     	//Exits all positions into equal amounts
         _closeAllPositions();
 
@@ -1687,11 +1739,11 @@ abstract contract Tripod {
         _closePosition();
 
         // 2. SELL REWARDS FOR WANT's
-        swapRewardTokens();
+        _swapRewardTokens();
 
         // 3. REBALANCE PORTFOLIO
         // to leave the position with the initial proportions
-        rebalance();
+        _rebalance();
 
         // Check that we have returned with no losses
         require( 
@@ -1754,12 +1806,8 @@ abstract contract Tripod {
         ); // don't create LP if we are already invested
 
         // Open the LP position
-        (uint256 amountA, uint256 amountB, uint256 amountC) = createLP();
-
         // Set invested amounts
-        invested[tokenA] = amountA;
-        invested[tokenB] = amountB;
-        invested[tokenC] = amountC;
+        (invested[tokenA], invested[tokenB], invested[tokenC]) = _createLP();
 
         (investedWeight[tokenA], investedWeight[tokenB], investedWeight[tokenC]) =
             TripodMath.getWeights(
@@ -1769,7 +1817,7 @@ abstract contract Tripod {
             );
 
         // Deposit LPs (if any)
-        depositLP();
+        _depositLP();
 
         // If there is loose balance, return it
         _returnLooseToProviders();
@@ -1807,29 +1855,14 @@ abstract contract Tripod {
     }
 
     /*
-    * @notice
-    *   function used internally to determine if a provider has funds available to deposit
-    *   Checks the providers want balance of the Tripod, the provider and the credit available to it
-    * @param _provider, the provider to check
-    */  
-    function hasAvailableBalance(ProviderStrategy _provider) 
-        internal 
-        view 
-        returns (bool) 
-    {
-        return 
-            _provider.balanceOfWant() > minAmountToSell ||
-                IERC20(_provider.want()).balanceOf(address(this)) > minAmountToSell ||
-                    _provider.vault().creditAvailable(address(_provider)) > minAmountToSell;
-    }
-
-    /*
      * @notice
      *  Function used in harvestTrigger in providers to decide wether an epoch can be started or not:
      * - if there is an available for all three tokens but no position open, return true
      * @return wether to start a new epoch or not
      */
     function shouldStartEpoch() public view returns (bool) {
+        return TripodMath.shouldStartEpoch();
+        /*
         //If we are currently invested return false
         if(invested[tokenA] != 0 ||
             invested[tokenB] != 0 || 
@@ -1838,9 +1871,10 @@ abstract contract Tripod {
         if(dontInvestWant) return false;
 
         return
-            hasAvailableBalance(providerA) && 
-                hasAvailableBalance(providerB) && 
-                    hasAvailableBalance(providerC);
+            TripodMath.hasAvailableBalance(providerA) && 
+                TripodMath.hasAvailableBalance(providerB) && 
+                    TripodMath.hasAvailableBalance(providerC);
+                    */
     }
 
     /*
@@ -1852,9 +1886,9 @@ abstract contract Tripod {
     */
     function tend() external virtual onlyKeepers {
         //Claim all outstanding rewards
-        getReward();
+        _getReward();
         //Swap out of all Reward Tokens
-        swapRewardTokens();
+        _swapRewardTokens();
     }
 
     /*
@@ -1871,17 +1905,16 @@ abstract contract Tripod {
     *   Function to be called during harvests that attempts to rebalance all 3 tokens evenly
     *   in comparision to the amounts the started with, i.e. return the same % return
     */
-    function rebalance() internal {
+    function _rebalance() internal {
         (uint8 direction, address token0, address token1, address token2) = TripodMath.rebalance();
         //If direction == 1 we swap one to two
         //if direction == 2 we swap two to one
         //else if its 0 we dont need to swap anything
         if(direction == 1) {
-            swapOneToTwo(token0, token1, token2);
+            _swapOneToTwo(token0, token1, token2);
         } else if(direction == 2){
-            swapTwoToOne(token0, token1, token2);
+            _swapTwoToOne(token0, token1, token2);
         }
-    
     }
 
     /*
@@ -1895,7 +1928,7 @@ abstract contract Tripod {
      * @param token0Address, address of one of the tokens we are swapping to
      * @param token1Address, address of the second token we are swapping to
     */
-    function swapOneToTwo(
+    function _swapOneToTwo(
         address toSwapToken,
         address token0Address,
         address token1Address
@@ -1904,37 +1937,37 @@ abstract contract Tripod {
         uint256 swapTo1;
         
         unchecked {
-            uint256 precision = 10 ** IERC20Extended(toSwapToken).decimals();
+            uint256 precisionA = 10 ** IERC20Extended(toSwapToken).decimals();
             // n = the amount of toSwapToken to sell
             // p = the percent of n to swap to token0Address repersented as 1e18
             (uint256 n, uint256 p) = TripodMath.getNandP(
-                TripodMath.RebalanceInfo(
-                    precision,
-                    invested[toSwapToken],
-                    IERC20(toSwapToken).balanceOf(address(this)),
-                    invested[token0Address],
-                    IERC20(token0Address).balanceOf(address(this)),
-                    quote(toSwapToken, token0Address, precision),
-                    0,
-                    invested[token1Address],
-                    IERC20(token1Address).balanceOf(address(this)),
-                    quote(toSwapToken, token1Address, precision),
-                    0
-                ));
+                TripodMath.RebalanceInfo({
+                    precisionA : precisionA,
+                    a0 : invested[toSwapToken],
+                    a1 : IERC20(toSwapToken).balanceOf(address(this)),
+                    b0 : invested[token0Address],
+                    b1 : IERC20(token0Address).balanceOf(address(this)),
+                    eOfB : quote(toSwapToken, token0Address, precisionA),
+                    precisionB : 0, //Not Needed
+                    c0 : invested[token1Address],
+                    c1 : IERC20(token1Address).balanceOf(address(this)),
+                    eOfC : quote(toSwapToken, token1Address, precisionA),
+                    precisionC : 0 //not needed
+                }));
             //swapTo0 = the amount to sell * The percent going to 0
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
             swapTo1 = n - swapTo0;
         }
         
-        swap(
+        _swap(
             toSwapToken, 
             token0Address, 
             swapTo0,
             0
         );
 
-        swap(
+        _swap(
             toSwapToken, 
             token1Address, 
             swapTo1, 
@@ -1953,35 +1986,35 @@ abstract contract Tripod {
      * @param token1Address, address of the second token we are swapping from
      * @param toTokenAddress, address of the token we are swapping to
     */
-    function swapTwoToOne(
+    function _swapTwoToOne(
         address token0Address,
         address token1Address,
         address toTokenAddress
     ) internal {
 
         (uint256 toSwapFrom0, uint256 toSwapFrom1) = TripodMath.getNbAndNc(
-            TripodMath.RebalanceInfo(
-                0,
-                invested[toTokenAddress],
-                IERC20(toTokenAddress).balanceOf(address(this)),
-                invested[token0Address],
-                IERC20(token0Address).balanceOf(address(this)),
-                quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
-                10 ** IERC20Extended(token0Address).decimals(),
-                invested[token1Address],
-                IERC20(token1Address).balanceOf(address(this)),
-                quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
-                10 ** IERC20Extended(token1Address).decimals()
-        ));
+            TripodMath.RebalanceInfo({
+                precisionA : 0, //not needed
+                a0 : invested[toTokenAddress],
+                a1 : IERC20(toTokenAddress).balanceOf(address(this)),
+                b0 : invested[token0Address],
+                b1 : IERC20(token0Address).balanceOf(address(this)),
+                eOfB : quote(token0Address, toTokenAddress, 10 ** IERC20Extended(token0Address).decimals()),
+                precisionB : 10 ** IERC20Extended(token0Address).decimals(),
+                c0 : invested[token1Address],
+                c1 : IERC20(token1Address).balanceOf(address(this)),
+                eOfC : quote(token1Address, toTokenAddress, 10 ** IERC20Extended(token1Address).decimals()),
+                precisionC : 10 ** IERC20Extended(token1Address).decimals()
+            }));
 
-        swap(
+        _swap(
             token0Address, 
             toTokenAddress, 
             toSwapFrom0, 
             0
         );
 
-        swap(
+        _swap(
             token1Address, 
             toTokenAddress, 
             toSwapFrom1, 
@@ -2028,7 +2061,7 @@ abstract contract Tripod {
         }
     }
 
-    function createLP() internal virtual returns (uint256, uint256, uint256);
+    function _createLP() internal virtual returns (uint256, uint256, uint256);
 
     /*
      * @notice
@@ -2036,7 +2069,7 @@ abstract contract Tripod {
      *      - burns the LP liquidity specified amount, all mins are 0
      * @param amount, amount of liquidity to burn
      */
-    function burnLP(uint256 _amount) internal virtual;
+    function _burnLP(uint256 _amount) internal virtual;
 
     /*
      * @notice
@@ -2049,32 +2082,32 @@ abstract contract Tripod {
      * @param minBOut, the min amount of Token B we should recieve
      * @param minCout, the min amount of Token C we should recieve
      */
-    function burnLP(
+    function _burnLP(
         uint256 _amount,
         uint256 minAOut, 
         uint256 minBOut, 
         uint256 minCOut
     ) internal virtual {
-        burnLP(_amount);
+        _burnLP(_amount);
         require(minAOut <= balanceOfA() &&
                     minBOut <= balanceOfB() &&
                         minCOut <= balanceOfC(), "min");
     }
 
-    function getReward() internal virtual;
+    function _getReward() internal virtual;
 
-    function depositLP() internal virtual;
+    function _depositLP() internal virtual;
 
-    function withdrawLP(uint256 amount) internal virtual;
+    function _withdrawLP(uint256 amount) internal virtual;
 
     /*
      * @notice
      *  Function available internally swapping amounts necessary to swap rewards
      *  This can be overwritten in order to apply custom reward token swaps
      */
-    function swapRewardTokens() internal virtual;
+    function _swapRewardTokens() internal virtual;
 
-    function swap(
+    function _swap(
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn,
@@ -2091,13 +2124,13 @@ abstract contract Tripod {
     * @param _minOut, minimum out we will accept
     * @returns the amount swapped to
     */
-    function swapReward(
+    function _swapReward(
         address _from, 
         address _to, 
         uint256 _amountIn, 
         uint256 _minOut
     ) internal virtual returns (uint256) {
-        return swap(_from, _to, _amountIn, _minOut);
+        return _swap(_from, _to, _amountIn, _minOut);
     }
 
     function quote(
@@ -2116,7 +2149,7 @@ abstract contract Tripod {
      */
     function _closePosition() internal returns (uint256, uint256, uint256) {
         // Unstake LP from staking contract
-        withdrawLP(balanceOfStake());
+        _withdrawLP(balanceOfStake());
 
         if (balanceOfPool() == 0) {
             return (0, 0, 0);
@@ -2125,7 +2158,7 @@ abstract contract Tripod {
         // **WARNING**: This call is sandwichable, care should be taken
         //              to always execute with a private relay
         // We take care of mins in the harvest logic to assure we account for swaps
-        burnLP(balanceOfPool());
+        _burnLP(balanceOfPool());
 
         return (balanceOfA(), balanceOfB(), balanceOfC());
     }
@@ -2264,9 +2297,9 @@ abstract contract Tripod {
         uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
         dontInvestWant = true;
-        withdrawLP(balanceOfStake());
+        _withdrawLP(balanceOfStake());
         //Burn lp will handle min Out checks
-        burnLP(
+        _burnLP(
             balanceOfPool(),
             expectedBalanceA,
             expectedBalanceB,
@@ -2320,7 +2353,7 @@ abstract contract Tripod {
      * @param _newProvider, new address of provider
      */
     function migrateProvider(address _newProvider) external onlyProviders {
-        ProviderStrategy newProvider = ProviderStrategy(_newProvider);
+        IProviderStrategy newProvider = IProviderStrategy(_newProvider);
         address providerWant = address(newProvider.want());
         if (providerWant == tokenA) {
             IERC20(tokenA).safeApprove(address(providerA), 0);
@@ -2848,12 +2881,13 @@ library BalancerHelper {
         }
     }
 
-    function getCreateLPVariables()public view returns(IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
+    function getCreateLPVariables() public view returns(IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
         IBalancerTripod tripod = IBalancerTripod(address(this));
         swaps = new IBalancerVault.BatchSwapStep[](6);
         assets = new IAsset[](7);
         limits = new int[](7);
         bytes32 poolId = tripod.poolId();
+
         //Need two trades for each provider token to create the LP
         //Each trade goes token -> bb-token -> mainPool
         IBalancerTripod.PoolInfo memory _poolInfo;
@@ -2900,6 +2934,7 @@ library BalancerHelper {
         //Burn a third for each token
         uint256 burnt;
         bytes32 poolId = tripod.poolId();
+
         //Need seperate swaps for each provider token
         //Each swap goes mainPool -> bb-token -> token
         IBalancerTripod.PoolInfo memory _poolInfo;
@@ -2946,7 +2981,7 @@ library BalancerHelper {
         assets = new IAsset[](4);
         limits = new int[](4);
         
-        bytes32 toSwapToPoolId = IBalancerTripod(address(this)).toSwapToPoolId();
+        bytes32 toSwapToPoolId = tripod.toSwapToPoolId();
         _swaps[0] = IBalancerVault.BatchSwapStep(
             0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014, //bal-eth pool id
             0,  //Index to use for Bal
@@ -2982,17 +3017,17 @@ library BalancerHelper {
             abi.encode(0)
         );
 
-        assets[0] = IAsset(0xba100000625a3754423978a60c9317c58a424e3D);
-        assets[1] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF);
-        assets[2] = IAsset(tripod.referenceToken());
-        assets[3] = IAsset(tripod.poolInfo(tripod.toSwapToIndex()).token);
+        assets[0] = IAsset(0xba100000625a3754423978a60c9317c58a424e3D); //bal token
+        assets[1] = IAsset(0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF); //Aura token
+        assets[2] = IAsset(tripod.referenceToken()); //weth
+        assets[3] = IAsset(tripod.poolInfo(tripod.toSwapToIndex()).token); //to Swap to token
 
         limits[0] = int(balBalance);
         limits[1] = int(auraBalance);
     }
 
     function getTendVariables(
-        IBalancerTripod.PoolInfo memory _poolInfo, 
+        IBalancerTripod.PoolInfo memory _poolInfo,
         uint256 balance
     ) public view returns(IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
         IBalancerTripod tripod = IBalancerTripod(address(this));
@@ -3062,13 +3097,14 @@ contract BalancerTripod is Tripod {
         bytes32(0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a);
     //The pool Id for the pool we will swap eth through to a provider token
     bytes32 public toSwapToPoolId;
-    //Index of the token we are currently swapping to from eth
+    //Index of the token for the poolInfo array we are currently swapping to from eth
     uint256 public toSwapToIndex;
     //The main Balancer Pool Id
     bytes32 public poolId;
 
     /***
         Aura specific variables for staking
+        We use the Convex interfaces since Aura is a fork, but using the Aura addresses for all contracts.
     ***/
     //Main contracts for staking and rewwards
     IConvexDeposit public constant depositContract = 
@@ -3131,7 +3167,7 @@ contract BalancerTripod is Tripod {
 
     /*
      * @notice
-     *  Initialize CurveTripod specifics
+     *  Initialize BalancerTripod specifics
      * @param _rewardsContract, The Aura rewards contract specific to this LP token
      */
     function _initializeBalancerTripod(address _rewardsContract) internal {
@@ -3148,25 +3184,25 @@ contract BalancerTripod is Tripod {
         //If USDC was not set as Token A we will need to set the index after deployment
         toSwapToPoolId = ethUsdcPoolId;
 
-        //Set array and mapping of pool Infos's for each token
-        setBalancerPoolInfos();
+        //Set array of pool Infos's for each token
+        _setBalancerPoolInfos();
 
         //Set mapping of curve index's
-        setCRVPoolIndexs();
+        _setCRVPoolIndexs();
 
         // The reward tokens are the tokens provided to the pool
         //This will update them based on current rewards on Aura
         _updateRewardTokens();
 
-        maxApprove(tokenA, address(balancerVault));
-        maxApprove(tokenB, address(balancerVault));
-        maxApprove(tokenC, address(balancerVault));
-        maxApprove(pool, address(depositContract));
+        _maxApprove(tokenA, address(balancerVault));
+        _maxApprove(tokenB, address(balancerVault));
+        _maxApprove(tokenC, address(balancerVault));
+        _maxApprove(pool, address(depositContract));
         
         //Max approve the curvePool as well for swaps during rebalnce
-        maxApprove(tokenA, address(curvePool));
-        maxApprove(tokenB, address(curvePool));
-        maxApprove(tokenC, address(curvePool));
+        _maxApprove(tokenA, address(curvePool));
+        _maxApprove(tokenB, address(curvePool));
+        _maxApprove(tokenC, address(curvePool));
     }
 
     /*
@@ -3269,7 +3305,7 @@ contract BalancerTripod is Tripod {
      * @notice
      *  Function used internally to collect the accrued rewards mid epoch
      */
-    function getReward() internal override {
+    function _getReward() internal override {
         rewardsContract.getReward(address(this), harvestExtras);
     }
 
@@ -3279,7 +3315,7 @@ contract BalancerTripod is Tripod {
      *  Creates a batchSwap for each provider token
      * @return the amounts actually invested for each token
      */
-    function createLP() internal override returns (uint256, uint256, uint256) {
+    function _createLP() internal override returns (uint256, uint256, uint256) {
     
         (IBalancerVault.BatchSwapStep[] memory swaps, 
             IAsset[] memory assets, 
@@ -3290,7 +3326,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            getFundManagement(), 
+            _getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -3310,7 +3346,7 @@ contract BalancerTripod is Tripod {
      *      - burns the LP liquidity specified amount, all mins are 0
      * @param amount, amount of liquidity to burn
      */
-    function burnLP(
+    function _burnLP(
         uint256 _amount
     ) internal override {
 
@@ -3323,7 +3359,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps, 
             assets, 
-            getFundManagement(), 
+            _getFundManagement(), 
             limits, 
             block.timestamp
         );
@@ -3333,7 +3369,7 @@ contract BalancerTripod is Tripod {
     * @notice
     *   Internal function to deposit lp tokens into Convex and stake
     */
-    function depositLP() internal override {
+    function _depositLP() internal override {
         uint256 toStake = IERC20(pool).balanceOf(address(this));
 
         if(toStake == 0) return;
@@ -3346,7 +3382,7 @@ contract BalancerTripod is Tripod {
     *   Internal function to unstake tokens from Convex
     *   harvesExtras will determine if we claim rewards, normally should be true
     */
-    function withdrawLP(uint256 amount) internal override {
+    function _withdrawLP(uint256 amount) internal override {
         if(amount == 0) return;
 
         rewardsContract.withdrawAndUnwrap(
@@ -3363,7 +3399,7 @@ contract BalancerTripod is Tripod {
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
      * @return swapped amount
      */
-    function swap(
+    function _swap(
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn,
@@ -3416,7 +3452,7 @@ contract BalancerTripod is Tripod {
     *   function used internally to sell the available Bal and Aura tokens
     *   We sell bal/Aura -> WETH -> toSwapTo
     */
-    function swapRewardTokens() internal override {
+    function _swapRewardTokens() internal override {
         uint256 balBalance = IERC20(balToken).balanceOf(address(this));
         uint256 auraBalance = IERC20(auraToken).balanceOf(address(this));
 
@@ -3432,7 +3468,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps,
             assets,
-            getFundManagement(), 
+            _getFundManagement(), 
             limits, 
             block.timestamp
         );   
@@ -3444,7 +3480,7 @@ contract BalancerTripod is Tripod {
     *   Will set the poolInfoMapping based on the underlying token
     *   Will set the poolInfo array in order of A, B, C for createLP() accounting
     */
-    function setBalancerPoolInfos() internal {
+    function _setBalancerPoolInfos() internal {
         (IERC20[] memory _tokens, , ) = balancerVault.getPoolTokens(poolId);
         IBalancerTripod.PoolInfo memory _poolInfo;
         for(uint256 i; i < _tokens.length; ++i) {
@@ -3459,7 +3495,6 @@ contract BalancerTripod is Tripod {
                     address(_pool),
                     _pool.getPoolId()
                 );
-            //poolInfoMapping[_token] = _poolInfo;
 
             if(_token == tokenA) {
                 poolInfo[0] = _poolInfo;
@@ -3475,7 +3510,7 @@ contract BalancerTripod is Tripod {
      * @notice
      *  Function used internally to set the index for each token in the 3Pool
      */
-    function setCRVPoolIndexs() internal {
+    function _setCRVPoolIndexs() internal {
         uint256 i = 0; 
         int128 poolIndex = 0;
         while (i < 3) {
@@ -3490,7 +3525,7 @@ contract BalancerTripod is Tripod {
      * @notice
      *  Function used by governance to swap tokens manually if needed, can be used when closing 
      * the LP position manually and need some re-balancing before sending funds back to the 
-     * providers
+     * providers. Should mainly be used for provider tokens but can be used for bal and aura if need be.
      * @param tokenFrom, address of token we are swapping from
      * @param tokenTo, address of token we are swapping to
      * @param swapInAmount, amount of swapPath[0] to swap for swapPath[1]
@@ -3508,14 +3543,14 @@ contract BalancerTripod is Tripod {
         require(swapInAmount > 0 && IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "!amount");
         
         if(core) {
-            return swap(
+            return _swap(
                 tokenFrom,
                 tokenTo,
                 swapInAmount,
                 minOutAmount
                 );
         } else {
-            swapRewardTokens();
+            _swapRewardTokens();
             return IERC20(tokenTo).balanceOf(address(this));
         }
     }
@@ -3525,7 +3560,7 @@ contract BalancerTripod is Tripod {
     *   Function available internally to create an lp during tend
     *   Will only use toSwapTo since that is what is swapped to during tend
     */
-    function createTendLP() internal {
+    function _createTendLP() internal {
         IBalancerTripod.PoolInfo memory _poolInfo = poolInfo[toSwapToIndex];
         uint256 balance = IERC20(_poolInfo.token).balanceOf(address(this));
 
@@ -3538,7 +3573,7 @@ contract BalancerTripod is Tripod {
             IBalancerVault.SwapKind.GIVEN_IN, 
             swaps,
             assets,
-            getFundManagement(),
+            _getFundManagement(),
             limits, 
             block.timestamp
         );
@@ -3553,13 +3588,13 @@ contract BalancerTripod is Tripod {
     */
     function tend() external override onlyKeepers {
         //Claim all outstanding rewards
-        getReward();
+        _getReward();
         //Swap out of all Reward Tokens
-        swapRewardTokens();
+        _swapRewardTokens();
         //Create LP tokens
-        createTendLP();
+        _createTendLP();
         //Stake LP tokens
-        depositLP();
+        _depositLP();
     }
 
     /*
@@ -3621,7 +3656,7 @@ contract BalancerTripod is Tripod {
         toSwapToIndex = newIndex;
     }
 
-    function getFundManagement() 
+    function _getFundManagement() 
         internal 
         view 
         returns (IBalancerVault.FundManagement memory fundManagement) 
@@ -3634,7 +3669,7 @@ contract BalancerTripod is Tripod {
             );
     }
 
-    function maxApprove(address _token, address _contract) internal {
+    function _maxApprove(address _token, address _contract) internal {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
     }
 

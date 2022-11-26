@@ -70,7 +70,7 @@ contract StrategyUnevenTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 
@@ -430,7 +430,7 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 

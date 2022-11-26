@@ -37,7 +37,7 @@ contract StrategyOperationsTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
+            //tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 

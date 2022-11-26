@@ -5,6 +5,8 @@ pragma experimental ABIEncoderV2;
 import {IFeedRegistry} from "../interfaces/IFeedRegistry.sol";
 import "../interfaces/IERC20Extended.sol";
 import {ITripod} from "../interfaces/ITripod.sol";
+import {IProviderStrategy} from "../interfaces/IProviderStrategy.sol";
+import {IVault} from "../interfaces/Vault.sol";
 
 /// @title Tripod Math
 /// @notice Contains the Rebalancing Logic and Math for the Tripod Base. Used during both the rebalance and quote rebalance functions
@@ -618,4 +620,42 @@ library TripodMath {
         if (delta < maxRelDelta) return true;
     }
 
+    /*
+    * @notice
+    *   function used internally to determine if a provider has funds available to deposit
+    *   Checks the providers want balance of the Tripod, the provider and the credit available to it
+    * @param _provider, the provider to check
+    */  
+    function hasAvailableBalance(IProviderStrategy _provider) 
+        public 
+        view 
+        returns (bool) 
+    {
+        uint256 minAmountToSell = ITripod(address(this)).minAmountToSell();
+        return 
+            _provider.balanceOfWant() > minAmountToSell ||
+                IERC20(_provider.want()).balanceOf(address(this)) > minAmountToSell ||
+                    _provider.vault().creditAvailable(address(_provider)) > minAmountToSell;
+    }
+
+    /*
+     * @notice
+     *  Function used in harvestTrigger in providers to decide wether an epoch can be started or not:
+     * - if there is an available for all three tokens but no position open, return true
+     * @return wether to start a new epoch or not
+     */
+    function shouldStartEpoch() public view returns (bool) {
+        ITripod tripod = ITripod(address(this));
+        //If we are currently invested return false
+        if(tripod.invested(tripod.tokenA()) != 0 ||
+            tripod.invested(tripod.tokenB()) != 0 || 
+                tripod.invested(tripod.tokenC()) != 0) return false;
+        
+        if(tripod.dontInvestWant()) return false;
+
+        return
+            hasAvailableBalance(tripod.providerA()) && 
+                hasAvailableBalance(tripod.providerB()) && 
+                    hasAvailableBalance(tripod.providerC());
+    }
 }

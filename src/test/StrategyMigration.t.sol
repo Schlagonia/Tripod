@@ -141,7 +141,6 @@ contract StrategyMigrationTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         ); 
@@ -193,7 +192,6 @@ contract StrategyMigrationTest is StrategyFixture {
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
             tripod.maxEpochTime(),
-            tripod.autoProtectionDisabled(),
             tripod.maxPercentageLoss(),
             tripod.launchHarvest()
         );
