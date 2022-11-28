@@ -1510,11 +1510,9 @@ abstract contract Tripod {
     bool public launchHarvest;
     // Boolean values protecting against re-investing into the pool
     bool public dontInvestWant;
-    //bool public autoProtectionDisabled;
 
     // Thresholds to operate the strat
     uint256 public minAmountToSell;
-    
     uint256 public minRewardToHarvest;
     uint256 public maxPercentageLoss;
     //Tripod version of maxReportDelay
@@ -1615,7 +1613,6 @@ abstract contract Tripod {
         providerB = IProviderStrategy(_providerB);
         providerC = IProviderStrategy(_providerC);
 
-        //Make sure we have the same gov set for all Providers
         //Make sure we have the same gov set for all Providers
         address vaultGov = providerA.vault().governance();
         require(vaultGov == providerB.vault().governance() && 
@@ -1862,19 +1859,6 @@ abstract contract Tripod {
      */
     function shouldStartEpoch() public view returns (bool) {
         return TripodMath.shouldStartEpoch();
-        /*
-        //If we are currently invested return false
-        if(invested[tokenA] != 0 ||
-            invested[tokenB] != 0 || 
-                invested[tokenC] != 0) return false;
-        
-        if(dontInvestWant) return false;
-
-        return
-            TripodMath.hasAvailableBalance(providerA) && 
-                TripodMath.hasAvailableBalance(providerB) && 
-                    TripodMath.hasAvailableBalance(providerC);
-                    */
     }
 
     /*
