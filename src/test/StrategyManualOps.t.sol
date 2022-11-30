@@ -145,7 +145,7 @@ contract ManualOpsTest is StrategyFixture {
         skip(1 days);
 
         vm.prank(keeper);
-        vm.expectRevert("!authorized");
+        vm.expectRevert("!auth");
         tripod.harvest();
 
         vm.prank(address(69));
