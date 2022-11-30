@@ -28,20 +28,8 @@ contract StrategyMigrationTest is StrategyFixture {
         CurveV2Tripod _newTripod = CurveV2Tripod(newTripod);
 
         assertEq(poolUsing.pool, _newTripod.pool());
-        assertTrue(!_newTripod.isOriginal());
 
-        vm.expectRevert(bytes("!original"));
-
-        _newTripod.cloneCurveV2Tripod(
-            address(assetFixtures[0].strategy),
-            address(assetFixtures[1].strategy),
-            address(assetFixtures[2].strategy),
-            address(weth),
-            poolUsing.pool,
-            poolUsing.rewardsContract
-        );
-
-        vm.expectRevert(bytes("tripod already initialized"));
+        vm.expectRevert();
 
         _newTripod.initialize(
             address(assetFixtures[0].strategy),
@@ -61,8 +49,16 @@ contract StrategyMigrationTest is StrategyFixture {
 
         console.log("Setting dont Invest and harvesting 2");
         //Set dont Invest to true so funds will be returned to provider on next harvest
-        vm.prank(gov);
-        tripod.setDontInvestWant(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            true,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
        
         //Turn off health checks for potentiall losses
         setProvidersHealthCheck(false);
@@ -104,15 +100,21 @@ contract StrategyMigrationTest is StrategyFixture {
         }
         console.log("Harvestingt 3");
         skip(1);
-        vm.prank(gov);
-        tripod.setDontInvestWant(false);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            false,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        );
 
+        vm.stopPrank();
         harvestTripod();
 
         skip(1);
 
         assertGt(tripod.totalLpBalance(), 0, "No lp balance"); 
     }
-
-
 }

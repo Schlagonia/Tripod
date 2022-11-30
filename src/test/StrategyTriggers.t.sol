@@ -5,7 +5,6 @@ import {StrategyFixture} from "./utils/StrategyFixture.sol";
 import "forge-std/console.sol";
 
 import {ProviderStrategy} from "../ProviderStrategy.sol";
-import {CurveV2Tripod} from "../DEXes/CurveV2Tripod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Extended} from "../interfaces/IERC20Extended.sol";
 import {IVault} from "../interfaces/Vault.sol";
@@ -47,22 +46,84 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(!tripod.harvestTrigger(1), "Check 2");
         skip(1);
 
-        vm.prank(gov);
-        tripod.setLaunchHarvest(true);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            //tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            true
+        ); 
+        vm.stopPrank();
 
         assertTrue(tripod.harvestTrigger(3), "check 3");
         
-        vm.prank(gov);
-        tripod.setLaunchHarvest(false);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            //tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            false
+        ); 
+        vm.stopPrank();
         skip(1);
 
         assertTrue(!tripod.harvestTrigger(1), "Check 4");
 
-        vm.prank(gov);
-        tripod.setMaxEpochTime(1 days);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            1 days,
+            //tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
         skip(tripod.maxEpochTime() + 1);
 
         assertTrue(tripod.harvestTrigger(3), "check 5");
+
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            true,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            //tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
+
+        skip(1);
+        vm.prank(keeper);
+        tripod.harvest();
+
+        skip(1);
+        //Should have credit available but dontInvestWant should stop it 
+        assertTrue(!tripod.harvestTrigger(1), "Check 6");
+
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            false,
+            tripod.minRewardToHarvest(),
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            //tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
+
+        assertTrue(tripod.harvestTrigger(1), "Check 7");
+
     }
 
     function testTendTrigger(uint256 _amount) public {
@@ -79,13 +140,31 @@ contract StrategyTriggerTest is StrategyFixture {
         //Should still be false since minReward is still not set
         assertTrue(!tripod.tendTrigger(1), "Check 2");
 
-        vm.prank(gov);
-        tripod.setMinRewardToHarvest(100);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            100,
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            //tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         assertTrue(tripod.tendTrigger(1), "check 3");
 
-        vm.prank(gov);
-        tripod.setMinRewardToHarvest(100e18);
+        vm.startPrank(gov);
+        tripod.setParamaters(
+            tripod.dontInvestWant(),
+            100e18,
+            tripod.minAmountToSell(),
+            tripod.maxEpochTime(),
+            //tripod.autoProtectionDisabled(),
+            tripod.maxPercentageLoss(),
+            tripod.launchHarvest()
+        ); 
+        vm.stopPrank();
 
         assertTrue(!tripod.tendTrigger(3), "Check 4");
     }
@@ -93,30 +172,6 @@ contract StrategyTriggerTest is StrategyFixture {
     function testTend(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
-
-        //Determining where tripod will swap to in order to compare post invested balances
-        address tokenTo;
-        if (tripod.referenceToken() == tripod.tokenA() ||
-            tripod.referenceToken() == tripod.tokenB() ||
-            tripod.referenceToken() == tripod.tokenC()
-        ) {
-            tokenTo = tripod.referenceToken();
-        } else {
-            (uint256 ratioA, uint256 ratioB, uint256 ratioC) = tripod.getRatios(
-                    tripod.balanceOfA(),
-                    tripod.balanceOfB(),
-                    tripod.balanceOfC()
-                );
-       
-                //If everything is equal use A   
-                if(ratioA <= ratioB && ratioA <= ratioC) {
-                    tokenTo = tripod.tokenA();
-                } else if(ratioB <= ratioC) {
-                    tokenTo = tripod.tokenB();
-                } else {
-                    tokenTo = tripod.tokenC();
-                }
-        }
         
         uint256 stakedBalance = tripod.balanceOfStake();
 
@@ -131,4 +186,5 @@ contract StrategyTriggerTest is StrategyFixture {
         assertEq(IERC20(crv).balanceOf(address(tripod)), 0, "Curve balance");
         assertGt(tripod.balanceOfStake(), stakedBalance, "Staked bal");
     }
+
 }

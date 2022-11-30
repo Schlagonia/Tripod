@@ -124,11 +124,11 @@ contract CurveV2Tripod is NoHedgeTripod {
         index[tokenB] = _getCRVPoolIndex(tokenB);
         index[tokenC] = _getCRVPoolIndex(tokenC);
 
-        maxApprove(tokenA, pool);
-        maxApprove(tokenB, pool);
-        maxApprove(tokenC, pool);
-        maxApprove(poolToken, pool);
-        maxApprove(poolToken, address(depositContract));
+        _maxApprove(tokenA, pool);
+        _maxApprove(tokenB, pool);
+        _maxApprove(tokenC, pool);
+        _maxApprove(poolToken, pool);
+        _maxApprove(poolToken, address(depositContract));
     }
 
     event Cloned(address indexed clone);
@@ -292,7 +292,7 @@ contract CurveV2Tripod is NoHedgeTripod {
      * @notice
      *  Function used internally to collect the accrued rewards mid epoch
      */
-    function getReward() internal override {
+    function _getReward() internal override {
         rewardsContract.getReward(address(this), harvestExtras);
     }
 
@@ -302,7 +302,7 @@ contract CurveV2Tripod is NoHedgeTripod {
      *     
      * @return the amounts actually invested for each token
      */
-    function createLP() internal override returns (uint256, uint256, uint256) {
+    function _createLP() internal override returns (uint256, uint256, uint256) {
         uint256 _aBalance = balanceOfA();
         uint256 _bBalance = balanceOfB();
         uint256 _cBalance = balanceOfC();
@@ -332,7 +332,7 @@ contract CurveV2Tripod is NoHedgeTripod {
      *      - burns the LP liquidity specified amount, all mins are 0
      * @param amount, amount of liquidity to burn
      */
-    function burnLP(
+    function _burnLP(
         uint256 _amount
     ) internal override {
 
@@ -355,7 +355,7 @@ contract CurveV2Tripod is NoHedgeTripod {
      * @param minBOut, the min amount of Token B we should recieve
      * @param minCout, the min amount of Token C we should recieve
      */
-    function burnLP(
+    function _burnLP(
         uint256 _amount,
         uint256 minAOut, 
         uint256 minBOut, 
@@ -377,7 +377,7 @@ contract CurveV2Tripod is NoHedgeTripod {
     * @notice
     *   Internal function to deposit lp tokens into Convex and stake
     */
-    function depositLP() internal override {
+    function _depositLP() internal override {
         uint256 toStake = IERC20(poolToken).balanceOf(address(this));
 
         if(toStake == 0) return;
@@ -390,7 +390,7 @@ contract CurveV2Tripod is NoHedgeTripod {
     *   Internal function to unstake tokens from Convex
     *   harvesExtras will determine if we claim rewards, normally should be true
     */
-    function withdrawLP(uint256 amount) internal override {
+    function _withdrawLP(uint256 amount) internal override {
         
         rewardsContract.withdrawAndUnwrap(
             amount, 
@@ -408,7 +408,7 @@ contract CurveV2Tripod is NoHedgeTripod {
     * @param _minOut, minimum out we will accept
     * @returns the amount swapped to
     */
-    function swapReward(
+    function _swapReward(
         address _from, 
         address _to, 
         uint256 _amountIn, 
@@ -429,7 +429,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         _router.swapExactTokensForTokens(
             _amountIn, 
             _minOut, 
-            getTokenOutPath(_from, _to), 
+            _getTokenOutPath(_from, _to), 
             address(this), 
             block.timestamp
         );
@@ -447,7 +447,7 @@ contract CurveV2Tripod is NoHedgeTripod {
      * @param _amountIn, amount of _tokenIn to swap for _tokenTo
      * @return swapped amount
      */
-    function swap(
+    function _swap(
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn,
@@ -488,7 +488,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         address _tokenFrom,
         address _tokenTo,
         uint256 _amountIn
-    ) internal view override returns (uint256) {
+    ) public view override returns (uint256) {
         if(_amountIn == 0) {
             return 0;
         }
@@ -511,7 +511,7 @@ contract CurveV2Tripod is NoHedgeTripod {
             // Call the quote function in CRV pool
             uint256[] memory amounts = _router.getAmountsOut(
                 _amountIn, 
-                getTokenOutPath(_tokenFrom, _tokenTo)
+                _getTokenOutPath(_tokenFrom, _tokenTo)
             );
 
             return amounts[amounts.length - 1];
@@ -569,14 +569,14 @@ contract CurveV2Tripod is NoHedgeTripod {
         require(IERC20(tokenFrom).balanceOf(address(this)) >= swapInAmount, "Not enough tokens");
         
         if(core) {
-            return swap(
+            return _swap(
                 tokenFrom,
                 tokenTo,
                 swapInAmount,
                 minOutAmount
                 );
         } else {
-            return swapReward(
+            return _swapReward(
                 tokenFrom,
                 tokenTo,
                 swapInAmount,
@@ -604,13 +604,13 @@ contract CurveV2Tripod is NoHedgeTripod {
     */
     function tend() external override onlyKeepers {
         //Claim all outstanding rewards
-        getReward();
+        _getReward();
         //Swap out of all Reward Tokens
-        swapRewardTokens();
+        _swapRewardTokens();
         //Create LP tokens
-        createLP();
+        _createLP();
         //Stake LP tokens
-        depositLP();
+        _depositLP();
     }
 
     /*
@@ -673,7 +673,7 @@ contract CurveV2Tripod is NoHedgeTripod {
      * @param _tokenOut, address of the token to swap to
      * @return address array of the swap path to follow
      */
-    function getTokenOutPath(address _tokenIn, address _tokenOut)
+    function _getTokenOutPath(address _tokenIn, address _tokenOut)
         internal
         view
         returns (address[] memory _path)
@@ -690,7 +690,7 @@ contract CurveV2Tripod is NoHedgeTripod {
         }
     }
 
-    function maxApprove(address _token, address _contract) internal {
+    function _maxApprove(address _token, address _contract) internal {
         IERC20(_token).safeApprove(_contract, type(uint256).max);
     }
 
