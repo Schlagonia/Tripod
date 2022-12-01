@@ -471,6 +471,10 @@ abstract contract Tripod {
             return true;
         }
 
+        if(shouldEndEpoch()) {
+            return true;
+        }
+        
         //Check if we have assets and are past our max time
         if(totalLpBalance() > 0 &&
             block.timestamp - providerA.vault().strategies(address(providerA)).lastReport > maxEpochTime
