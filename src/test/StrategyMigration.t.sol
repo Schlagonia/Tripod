@@ -20,8 +20,8 @@ contract StrategyMigrationTest is StrategyFixture {
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
-            address(weth),
             poolUsing.pool,
+            hedgilPool,
             poolUsing.rewardsContract
         );
 
@@ -35,8 +35,8 @@ contract StrategyMigrationTest is StrategyFixture {
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
-            address(weth),
             poolUsing.pool,
+            hedgilPool,
             poolUsing.rewardsContract
         );
     }

@@ -4,7 +4,7 @@ pragma experimental ABIEncoderV2;
 
 // Import necessary libraries and interfaces:
 // NoHedgetripod to inherit from
-import "../Hedges/NoHedgeTripod.sol";
+import "../Hedges/HedgilCurveV2Tripod.sol";
 
 import {ICurveFi} from "../interfaces/Curve/ICurveFi.sol";
 import {IUniswapV2Router02} from "../interfaces/uniswap/V2/IUniswapV2Router02.sol";
@@ -15,7 +15,7 @@ import {ITradeFactory} from "../interfaces/ySwaps/ITradeFactory.sol";
 // Safe casting and math
 import {SafeCast} from "../libraries/SafeCast.sol";
 
-contract CurveV2Tripod is NoHedgeTripod {
+contract CurveV2Tripod is HedgilCurveV2Tripod {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using SafeCast for int256;
@@ -64,16 +64,17 @@ contract CurveV2Tripod is NoHedgeTripod {
      * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, pool to LP
+     * @param _hedgilPool The pool used for the hedge
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      */
     constructor(
         address _providerA,
         address _providerB,
         address _providerC,
-        address _referenceToken,
         address _pool,
+        address _hedgilPool,
         address _rewardsContract
-    ) NoHedgeTripod(_providerA, _providerB, _providerC, _referenceToken, _pool) {
+    ) HedgilCurveV2Tripod(_providerA, _providerB, _providerC, _pool, _hedgilPool) {
         _initializeCurveV2Tripod(_rewardsContract);
     }
 
@@ -85,17 +86,19 @@ contract CurveV2Tripod is NoHedgeTripod {
 	 * @param _providerC, provider strrategy of tokenC
      * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, pool to LP
+     * @param _hedgilPool The pool used for the hedge
      * @param _rewardsContract The Convex rewards contract specific to this LP token
      */
     function initialize(
         address _providerA,
         address _providerB,
         address _providerC,
-        address _referenceToken,
         address _pool,
+        address _hedgilPool,
         address _rewardsContract
     ) external {
-        _initialize(_providerA, _providerB, _providerC, _referenceToken, _pool);
+        _initialize(_providerA, _providerB, _providerC, _pool);
+        _initializeHedgilCurveV2Tripod(_hedgilPool);
         _initializeCurveV2Tripod(_rewardsContract);
     }
 
@@ -184,7 +187,7 @@ contract CurveV2Tripod is NoHedgeTripod {
 
     /*
      * @notice
-     *  Function returning the name of the tripod in the format "NoHedgeCurveV2Tripod(CurveTokenSymbol)"
+     *  Function returning the name of the tripod in the format "HedgedCurveV2Tripod(CurveTokenSymbol)"
      * @return name of the strategy
      */
     function name() external view override returns (string memory) {
@@ -194,7 +197,7 @@ contract CurveV2Tripod is NoHedgeTripod {
             )
         );
 
-        return string(abi.encodePacked("NoHedgeCurveV2Tripod(", symbol, ")"));
+        return string(abi.encodePacked("HedgedCurveV2Tripod(", symbol, ")"));
     }
 
     /*
@@ -584,16 +587,6 @@ contract CurveV2Tripod is NoHedgeTripod {
                 );
         }
     }
-
-    /*
-     * @notice
-     *  Function used by harvest trigger to assess whether to harvest it as
-     * the tripod may have gone out of bounds. If debt ratio is kept in the vaults, the tripod
-     * re-centers, if debt ratio is 0, the tripod is simpley closed and funds are sent back
-     * to each provider
-     * @return bool assessing whether to end the epoch or not
-     */
-    function shouldEndEpoch() public view override returns (bool) {}
 
     /*
     * @notice 

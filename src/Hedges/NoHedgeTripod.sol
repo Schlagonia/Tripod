@@ -9,9 +9,8 @@ abstract contract NoHedgeTripod is Tripod {
         address _providerA,
         address _providerB,
         address _providerC,
-        address _weth,
         address _pool
-    ) Tripod(_providerA, _providerB, _providerC, _weth, _pool) {}
+    ) Tripod(_providerA, _providerB, _providerC, _pool) {}
 
     function getHedgeBudget(address /*token*/)
         public

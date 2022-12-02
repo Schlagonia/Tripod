@@ -119,7 +119,8 @@ abstract contract Tripod {
     address public tokenC;
 
     // Reference token to use in swaps: WETH, WFTM...
-    address public referenceToken;
+    address public constant referenceToken =
+        0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     // Bool repersenting if one of the tokens is == referencetoken
     bool public usingReference;
     // Array containing reward tokens
@@ -209,17 +210,15 @@ abstract contract Tripod {
      * @param _providerA, provider strategy of tokenA
      * @param _providerB, provider strategy of tokenB
      * @param _providerC, provider strategy of tokenC
-     * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, Pool to LP
      */
     constructor(
         address _providerA,
         address _providerB,
         address _providerC,
-        address _referenceToken,
         address _pool
     ) {
-        _initialize(_providerA, _providerB, _providerC, _referenceToken, _pool);
+        _initialize(_providerA, _providerB, _providerC, _pool);
     }
 
     /*
@@ -228,14 +227,12 @@ abstract contract Tripod {
      * @param _providerA, provider strategy of tokenA
      * @param _providerB, provider strategy of tokenB
      * @param _providerC, provider strategy of tokenC
-     * @param _referenceToken, token to use as reference, for pricing oracles and paying hedging costs (if any)
      * @param _pool, Pool to LP
      */
     function _initialize(
         address _providerA,
         address _providerB,
         address _providerC,
-        address _referenceToken,
         address _pool
     ) internal virtual {
         require(address(providerA) == address(0));
@@ -248,7 +245,6 @@ abstract contract Tripod {
         require(vaultGov == providerB.vault().governance() && 
                     vaultGov == providerC.vault().governance());
 
-        referenceToken = _referenceToken;
         pool = _pool;
         keeper = msg.sender;
         maxEpochTime = type(uint256).max;
@@ -267,7 +263,7 @@ abstract contract Tripod {
         IERC20(tokenC).safeApprove(_providerC, type(uint256).max);
 
         //Check if we are using the reference token for easier swaps from rewards
-        if (tokenA == _referenceToken || tokenB == _referenceToken || tokenC == _referenceToken) {
+        if (tokenA == referenceToken || tokenB == referenceToken || tokenC == referenceToken) {
             usingReference = true;
         }
     }
@@ -1055,24 +1051,23 @@ abstract contract Tripod {
     //Hedging functions
     function getHedgeBudget(address /*token*/)
         public
-        pure
+        view
         virtual
         returns (uint256)
     {}
 
-    function getHedgeProfit() public pure virtual returns (uint256, uint256, uint256) {}
+    function getHedgeProfit() public view virtual returns (uint256, uint256, uint256) {}
 
     function hedgeLP()
         internal
-        pure
         virtual
         returns (uint256 costA, uint256 costB, uint256 costC)
     {}
 
-    function closeHedge() internal pure virtual {}
+    function closeHedge() internal virtual {}
 
     // this function is called by Joint to see if it needs to stop initiating new epochs due to too high volatility
-    function _autoProtect() internal pure virtual returns (bool) {}
+    function _autoProtect() internal view virtual returns (bool) {}
 
     function shouldEndEpoch() public view virtual returns (bool) {}
 }

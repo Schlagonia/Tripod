@@ -38,6 +38,7 @@ contract StrategyFixture is ExtendedTest {
     Pool public poolUsing;
 
     CurveV2Tripod public tripod;
+    address public hedgilPool;
     IERC20 public weth;
 
     address public crv = 0xD533a949740bb3306d119CC777fa900bA034cd52;
@@ -62,7 +63,7 @@ contract StrategyFixture is ExtendedTest {
 
     address public constant yearnTreasuryVault = 0x93A62dA5a14C80f265DAbC077fCEE437B1a0Efde;
 
-    uint256 public minFuzzAmt = 10 ether; // 10 cents
+    uint256 public minFuzzAmt = 100 ether; // 10 cents
     // @dev maximum amount of want tokens deposited based on @maxDollarNotional
     uint256 public maxFuzzAmt = 2_000_000 ether; // $2.5M
     // Used for integer approximation
@@ -108,9 +109,9 @@ contract StrategyFixture is ExtendedTest {
             address(assetFixtures[0].strategy),
             address(assetFixtures[1].strategy),
             address(assetFixtures[2].strategy),
-            address(weth),
             poolUsing.pool,
             poolUsing.poolToken,
+            address(0), //hedgil pool
             poolUsing.rewardsContract
         );
 
@@ -167,17 +168,17 @@ contract StrategyFixture is ExtendedTest {
         address _providerA,
         address _providerB,
         address _providerC,
-        address _referenceToken,
         address _pool,
         address _poolToken,
+        address _hedgilPool,
         address _rewardsContract
     ) internal {
         tripod = new CurveV2Tripod(
             _providerA,
             _providerB,
             _providerC,
-            _referenceToken,
             _pool,
+            _hedgilPool,
             _rewardsContract
         );
         console.log("New tripod  created");
