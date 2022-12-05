@@ -203,4 +203,37 @@ contract StrategyMigrationTest is StrategyFixture {
 
         assertGt(tripod.totalLpBalance(), 0, "No lp balance"); 
     }
+
+    function testMigrateTripod(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        address newTripod = cloner.cloneBalancerTripod(
+            address(assetFixtures[0].strategy),
+            address(assetFixtures[1].strategy),
+            address(assetFixtures[2].strategy),
+            address(weth),
+            poolUsing.pool,
+            poolUsing.rewardsContract
+        );
+
+        BalancerTripod _newTripod = BalancerTripod(newTripod);
+
+        for(uint256 i; i < 3; i ++) {
+            AssetFixture memory _fixture = assetFixtures[i];
+            ProviderStrategy _provider = _fixture.strategy;
+
+            vm.prank(gov);
+            _provider.setTripod(newTripod);
+            assertEq(_provider.keeper(), newTripod);
+            assertEq(_provider.tripod(), newTripod);
+        }
+
+        depositAllVaults(_amount);
+        skip(1);
+        assertTrue(_newTripod.shouldStartEpoch());
+        vm.prank(gov);
+        _newTripod.harvest();
+
+        assertGt(_newTripod.balanceOfStake(), 0, "HarvestFailed");
+        assertEq(tripod.totalLpBalance(), 0);
+    }
 }
