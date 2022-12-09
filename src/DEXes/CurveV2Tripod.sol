@@ -8,6 +8,7 @@ import "../Hedges/HedgilCurveV2Tripod.sol";
 
 import {ICurveFi} from "../interfaces/Curve/ICurveFi.sol";
 import {IUniswapV2Router02} from "../interfaces/uniswap/V2/IUniswapV2Router02.sol";
+import {ICurveRouter} from "../interfaces/Curve/ICurveRouter.sol";
 import {IConvexDeposit} from "../interfaces/Convex/IConvexDeposit.sol";
 import {IConvexRewards} from "../interfaces/Convex/IConvexRewards.sol";
 import {ITradeFactory} from "../interfaces/ySwaps/ITradeFactory.sol";
@@ -23,14 +24,10 @@ contract CurveV2Tripod is HedgilCurveV2Tripod {
     // Used for cloning, will automatically be set to false for other clones
     bool public isOriginal = true;
 
-    //Routers to use for reward swaps
-    address internal constant sushiRouter =
-        0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F;
-    address internal constant uniRouter =
-        0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+    // 
+    ICurveRouter public router =
+        ICurveRouter(0x55B916Ce078eA594c10a874ba67eCc3d62e29822);
 
-    // Use sushi router due to higher liquidity for CVX
-    address public router;
     //address of the trade factory to be used for extra rewards
     address public tradeFactory;
 
@@ -52,9 +49,13 @@ contract CurveV2Tripod is HedgilCurveV2Tripod {
 
     //Base Reward Tokens
     address internal constant convexToken = 
-        address(0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B);
+        0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B;
     address internal constant crvToken =
-        address(0xD533a949740bb3306d119CC777fa900bA034cd52);
+        0xD533a949740bb3306d119CC777fa900bA034cd52;
+    address internal constant crvEthPool = 
+        0x8301AE4fc9c624d1D396cbDAa1ed877821D7C511;
+    address internal constant cvxEthPool =
+        0xB576491F1E6e5E62f1d8F26062Ee822B40B0E0d4;
 
     /*
      * @notice
@@ -113,8 +114,7 @@ contract CurveV2Tripod is HedgilCurveV2Tripod {
         poolToken = ICurveFi(pool).token();
         //UPdate the PID for the rewards pool
         pid = rewardsContract.pid();
-        //Set the router to use sushi
-        router = sushiRouter;
+ 
         //Default to always claim extras
         harvestExtras = true;
 
@@ -401,6 +401,8 @@ contract CurveV2Tripod is HedgilCurveV2Tripod {
         );
     }
 
+    uint256[3] internal zeros = [uint256(0), uint256(0), uint256(0)];
+    address internal addZero = address(0);
     /*
     * @notice
     *   Internal function to swap the reward tokens into one of the provider tokens
@@ -420,24 +422,41 @@ contract CurveV2Tripod is HedgilCurveV2Tripod {
         if(_amountIn < minAmountToSell) return 0;
         //Dont swap extra rewarsds
         if(_from != crvToken && _from != convexToken) return 0;
-        
-        //Use Router for rewards
-        IUniswapV2Router02 _router = IUniswapV2Router02(router);
 
-        uint256 prevBalance = IERC20(_to).balanceOf(address(this));
+        //uint256 prevBalance = IERC20(_to).balanceOf(address(this));
         
         // Allow necessary amount for router
-        _checkAllowance(router, IERC20(_from), _amountIn);
+        _checkAllowance(address(router), IERC20(_from), _amountIn);
 
-        _router.swapExactTokensForTokens(
-            _amountIn, 
-            _minOut, 
-            _getTokenOutPath(_from, _to), 
-            address(this), 
-            block.timestamp
-        );
+        if(_to == referenceToken) {
 
-        return IERC20(_to).balanceOf(address(this)) - prevBalance;
+            return router.exchange(
+                _from == crvToken ? crvEthPool : cvxEthPool, 
+                _from, 
+                _to, 
+                _amountIn, 
+                _minOut
+            );
+        } else {
+            address _pool = _from == crvToken ? crvEthPool : cvxEthPool;
+            uint256 i = ICurveFi(_pool).coins(0) == referenceToken ? 1 : 0;
+            uint256 j = i == 0 ? 1 : 0;
+            //uint256 three = 3;
+            //uint256 zero = 0;
+            
+            //address[9] memory _route = [_from, _pool, referenceToken, pool, _to, address(0), address(0), address(0), address(0)];
+
+            //uint256[3][4] memory _params = [[i, j, three], [index[referenceToken], index[_to], three], [zero, zero, zero], [zero, zero, zero]];
+
+            return router.exchange_multiple(
+                [_from, _pool, referenceToken, pool, _to, addZero, addZero, addZero, addZero], 
+                [[i, j, uint256(3)], [index[referenceToken], index[_to], uint256(3)], zeros, zeros], 
+                _amountIn, 
+                _minOut
+            );
+        }
+
+        //return IERC20(_to).balanceOf(address(this)) - prevBalance;
     }
 
     /*
@@ -508,16 +527,14 @@ contract CurveV2Tripod is HedgilCurveV2Tripod {
                 || _tokenFrom == tokenC) useCurve = true;
 
         if(!useCurve) {
-            // Do NOT use crv pool use V2 router
-            IUniswapV2Router02 _router = IUniswapV2Router02(router);
-
-            // Call the quote function in CRV pool
-            uint256[] memory amounts = _router.getAmountsOut(
-                _amountIn, 
-                _getTokenOutPath(_tokenFrom, _tokenTo)
+            
+            return router.get_exchange_amount(
+                _tokenFrom == crvToken ? crvEthPool : cvxEthPool,
+                _tokenFrom, 
+                _tokenTo, 
+                _amountIn
             );
-
-            return amounts[amounts.length - 1];
+            
         } else {
             ICurveFi _pool = ICurveFi(pool);
 
@@ -652,14 +669,6 @@ contract CurveV2Tripod is HedgilCurveV2Tripod {
     }
 
     /*
-    * @notice
-    *   Function available to management to change which UniV2 router we are using
-    */
-    function changeRouter() external onlyVaultManagers {
-        router = router == sushiRouter ? uniRouter : sushiRouter;
-    }
-
-        /*
      * @notice
      *  Function available internally deciding the swapping path to follow
      * @param _tokenIn, address of the token to swap from

@@ -7,6 +7,7 @@ import "../interfaces/IERC20Extended.sol";
 import {ITripod} from "../interfaces/ITripod.sol";
 import {IProviderStrategy} from "../interfaces/IProviderStrategy.sol";
 import {IVault} from "../interfaces/Vault.sol";
+import "forge-std/console.sol";
 
 /// @title Tripod Math
 /// @notice Contains the Rebalancing Logic and Math for the Tripod Base. Used during both the rebalance and quote rebalance functions
@@ -536,6 +537,13 @@ library TripodMath {
             swapTo0 = n * p / RATIO_PRECISION;
             //To assure we dont sell to much 
             swapTo1 = n - swapTo0;
+            console.log("N : ", n);
+            console.log("P :", p);
+            console.log("To swao to 0 :", swapTo0);
+            console.log("Swap to 1 :", swapTo1);
+            console.log("Swap from in usd :", getOraclePrice(toSwapFrom, info.a1)/1e8);
+            console.log("Swap to 0 in USD :", getOraclePrice(toSwapTo0, info.b1)/1e8);
+            console.log("Swap to 1 in USD :", getOraclePrice(toSwapTo1, info.c1)/1e8);
         }
 
         amountOut = tripod.quote(

@@ -233,11 +233,11 @@ contract StrategyOperationsTest is StrategyFixture {
         }
 
         vm.startPrank(gov);
-        vm.expectRevert(bytes("TokenA"));
+        vm.expectRevert();
         tripod.sweep(address(assetFixtures[0].want));
-        vm.expectRevert(bytes("TokenB"));
+        vm.expectRevert();
         tripod.sweep(address(assetFixtures[1].want));
-        vm.expectRevert(bytes("TokenC"));
+        vm.expectRevert();
         tripod.sweep(address(assetFixtures[2].want));
         vm.stopPrank();
 
@@ -247,7 +247,7 @@ contract StrategyOperationsTest is StrategyFixture {
         deal(address(toSweep), address(tripod), amount);
 
         assertEq(toSweep.balanceOf(user), 0);
-        vm.expectRevert(bytes("!authorized"));
+        vm.expectRevert(bytes("auth"));
         tripod.sweep(address(toSweep));
 
         vm.prank(gov);
