@@ -32,7 +32,7 @@ contract StrategyOperationsTest is StrategyFixture {
         skip(1 days);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),

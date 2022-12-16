@@ -297,7 +297,7 @@ abstract contract Tripod {
     * @param _maxPercentageLoss, new value to use
     * @param _newLaunchHarvest, bool to have keepers launch a harvest
     */
-    function setParamaters(
+    function setParameters(
         bool _dontInvestWant,
         uint256 _minRewardToHarvest,
         uint256 _minAmountToSell,

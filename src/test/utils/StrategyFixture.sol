@@ -312,6 +312,13 @@ contract StrategyFixture is ExtendedTest {
             0x689440f2Ff927E1f24c72F1087E1FAF471eCe1c8,
             ["USDC", "DAI", "USDT"]
         ));
+        // migrated aura contract
+        pools.push(Pool(
+            0xA13a9247ea42D743238089903570127DdA72fE44,
+            address(0),
+            0xFb6b1c1A1eA5618b3CfC20F81a11A97E930fA46B,
+            ["USDC", "DAI", "USDT"]
+        ));
         //new Balancer aa-bb-pool
         pools.push(Pool(
             0xA13a9247ea42D743238089903570127DdA72fE44,

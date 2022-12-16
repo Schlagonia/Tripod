@@ -222,7 +222,7 @@ contract RebalanceTest is StrategyFixture {
         assertRelApproxEq(bRatio, cRatio, DELTA);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),

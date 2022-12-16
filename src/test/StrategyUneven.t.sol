@@ -65,7 +65,7 @@ contract StrategyUnevenTest is StrategyFixture {
         skip(1 days);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -302,6 +302,7 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
         assertRelApproxEq(bRatio, cRatio, DELTA);
         //assertTrue(false);
     }
+
     function testQuoteRebalanceChangesWithRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         depositAllVaultsAndHarvest(_amount);
@@ -402,8 +403,8 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
 
         skip(1);
         //earn profit
-        deal(cvx, address(tripod), _amount/10);
-        deal(crv, address(tripod), _amount/10);
+        deal(cvx, address(tripod), _amount/100);
+        deal(crv, address(tripod), _amount/100);
         skip(1);
 
         (uint256 _a, uint256  _b, uint256  _c) = tripod.estimatedTotalAssetsAfterBalance();
@@ -425,7 +426,7 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
         assertRelApproxEq(bRatio, cRatio, DELTA);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),

@@ -44,7 +44,7 @@ contract StrategyMigrationTest is StrategyFixture {
     function testCloneTripodFromOldToNewPool(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         //get the old a-bb-usd pool
-        poolUsing = pools[3];
+        poolUsing = pools[2];
         
         delete assetFixtures;
 
@@ -136,7 +136,7 @@ contract StrategyMigrationTest is StrategyFixture {
         console.log("Setting dont Invest and harvesting 2");
         //Set dont Invest to true so funds will be returned to provider on next harvest
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -187,7 +187,7 @@ contract StrategyMigrationTest is StrategyFixture {
         console.log("Harvestingt 3");
         skip(1);
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             false,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
