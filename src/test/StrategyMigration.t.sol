@@ -50,7 +50,7 @@ contract StrategyMigrationTest is StrategyFixture {
         console.log("Setting dont Invest and harvesting 2");
         //Set dont Invest to true so funds will be returned to provider on next harvest
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -101,7 +101,7 @@ contract StrategyMigrationTest is StrategyFixture {
         console.log("Harvestingt 3");
         skip(1);
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             false,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),

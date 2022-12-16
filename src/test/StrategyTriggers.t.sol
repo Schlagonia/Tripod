@@ -47,7 +47,7 @@ contract StrategyTriggerTest is StrategyFixture {
         skip(1);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             tripod.dontInvestWant(),
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -61,7 +61,7 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(tripod.harvestTrigger(3), "check 3");
         
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             tripod.dontInvestWant(),
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -76,7 +76,7 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(!tripod.harvestTrigger(1), "Check 4");
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             tripod.dontInvestWant(),
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -91,7 +91,7 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(tripod.harvestTrigger(3), "check 5");
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -111,7 +111,7 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(!tripod.harvestTrigger(1), "Check 6");
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             false,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -141,7 +141,7 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(!tripod.tendTrigger(1), "Check 2");
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             tripod.dontInvestWant(),
             100,
             tripod.minAmountToSell(),
@@ -155,7 +155,7 @@ contract StrategyTriggerTest is StrategyFixture {
         assertTrue(tripod.tendTrigger(1), "check 3");
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             tripod.dontInvestWant(),
             100e18,
             tripod.minAmountToSell(),

@@ -42,7 +42,7 @@ contract StrategyShutdownTest is StrategyFixture {
         _vault.setEmergencyShutdown(true);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -105,7 +105,7 @@ contract StrategyShutdownTest is StrategyFixture {
         skip(1 days);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),

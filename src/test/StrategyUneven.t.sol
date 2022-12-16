@@ -67,7 +67,7 @@ contract StrategyUnevenTest is StrategyFixture {
         deal(crv, address(tripod), _amount/100);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
@@ -406,8 +406,8 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
 
         skip(1);
         //earn profit
-        deal(cvx, address(tripod), _amount/10);
-        deal(crv, address(tripod), _amount/10);
+        deal(cvx, address(tripod), _amount/100);
+        deal(crv, address(tripod), _amount/100);
         skip(1);
 
         (uint256 _a, uint256  _b, uint256  _c) = tripod.estimatedTotalAssetsAfterBalance();
@@ -429,7 +429,7 @@ function testProfitableRebalanceTowToOne(uint256 _amount) public {
         assertRelApproxEq(bRatio, cRatio, DELTA);
 
         vm.startPrank(gov);
-        tripod.setParamaters(
+        tripod.setParameters(
             true,
             tripod.minRewardToHarvest(),
             tripod.minAmountToSell(),
