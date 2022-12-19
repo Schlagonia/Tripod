@@ -1667,7 +1667,7 @@ abstract contract Tripod {
     * @param _maxPercentageLoss, new value to use
     * @param _newLaunchHarvest, bool to have keepers launch a harvest
     */
-    function setParamaters(
+    function setParameters(
         bool _dontInvestWant,
         uint256 _minRewardToHarvest,
         uint256 _minAmountToSell,
@@ -3092,7 +3092,7 @@ contract BalancerTripod is Tripod {
     ***/
     //Main contracts for staking and rewwards
     IConvexDeposit public constant depositContract = 
-        IConvexDeposit(0x7818A1DA7BD1E64c199029E86Ba244a9798eEE10);
+        IConvexDeposit(0xA57b8d98dAE62B26Ec3bcC4a365338157060B234);
     //Specific for each LP token
     IConvexRewards public rewardsContract; 
     // this is unique to each pool
