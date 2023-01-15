@@ -151,7 +151,7 @@ contract ManualOpsTest is StrategyFixture {
         vm.prank(address(69));
         tripod.harvest();
     }
-/*
+
     function testUpdateRewards(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
         uint256[3] memory deposited = depositAllVaultsAndHarvest(_amount);
@@ -161,8 +161,15 @@ contract ManualOpsTest is StrategyFixture {
         vm.prank(management);
         tripod.updateRewardTokens();
         
-        assertEq(tripod.getRewardTokensLength(), 2);
+        //Crv if first
+        assertEq(tripod.rewardTokens(0), 0xD533a949740bb3306d119CC777fa900bA034cd52);
+        // cvx is second
+        assertEq(tripod.rewardTokens(1), 0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B);
+
+        //vm.expectRevert(bytes("EvmError: Revert"));
+        // no third
+        //tripod.rewardTokens(2);
 
     }
-*/
+
 }

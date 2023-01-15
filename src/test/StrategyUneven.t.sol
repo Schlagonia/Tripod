@@ -118,6 +118,7 @@ contract StrategyUnevenTest is StrategyFixture {
             fixture.vault.updateStrategyDebtRatio(address(fixture.strategy), 10_000);
         }
         skip(1 days);
+        
         vm.prank(keeper);
         tripod.harvest();
 

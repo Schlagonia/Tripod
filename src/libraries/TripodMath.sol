@@ -149,7 +149,7 @@ library TripodMath {
      */
     function getNbAndNc(RebalanceInfo memory info) public pure returns (uint256 nb, uint256 nc) {
         /*
-         *          a0*x1 + y0*eOfy*x1 - a1*x0 - y1*eOfy*x0
+         *          a0*b1 + c0*eOfc*b1 - a1*b0 - c1*eOfc*b0
          *   nx = ------------------------------------------
          *               a0 + eOfc*c0 + b0*eOfb
          */

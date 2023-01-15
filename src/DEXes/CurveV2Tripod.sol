@@ -520,13 +520,13 @@ contract CurveV2Tripod is HedgilCurveV2Tripod {
                         _tokenTo == tokenC, 
                             "must be valid token"); 
 
-        //We should only use curve if _from AND _to is one of the LP tokens
-        bool useCurve;
+        //We should only use curve pool if _from AND _to is one of the LP tokens
+        bool core;
         if(_tokenFrom == tokenA 
             || _tokenFrom == tokenB 
-                || _tokenFrom == tokenC) useCurve = true;
+                || _tokenFrom == tokenC) core = true;
 
-        if(!useCurve) {
+        if(!core) {
             
             return router.get_exchange_amount(
                 _tokenFrom == crvToken ? crvEthPool : cvxEthPool,
