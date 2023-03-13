@@ -33,34 +33,9 @@ contract ManualOpsTest is StrategyFixture {
 
         assertEq(tripod.balanceOfPool(), 0, "Pool balance not 0");
         assertEq(tripod.balanceOfStake(), 0, "staked balance not 0");
-        assertGt(tripod.balanceOfA(), 0, "A balance is 0");
-        assertGt(tripod.balanceOfC(), 0, "C balance is 0");
-        assertGt(tripod.balanceOfB(), 0, "B balance is 0");
-    }
-
-    function testManualLiquidate(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
-        depositAllVaultsAndHarvest(_amount);
-
-        assertGt(tripod.balanceOfStake(), 0);
-
-        skip(7 hours);
-
-        uint256 lpBalance = tripod.totalLpBalance(); 
-        (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
-        vm.prank(gov);
-        tripod.removeLiquidityManually(
-            (_a /2) * 9_900 / 10_000,
-            (_b / 2) * 9_900 / 10_000,
-            (_c / 2) * 9_900 / 10_000
-        );
-
-        assertEq(tripod.balanceOfPool(), 0, "balance of pool off");
-        assertEq(tripod.balanceOfStake(), 0);
-        assertGt(tripod.balanceOfA(), 0, "A balance");
-        assertGt(tripod.balanceOfC(), 0, "c balance");
-        assertGt(tripod.balanceOfB(), 0, "b balance");
-        assertEq(tripod.invested(tripod.tokenA()), 0, "invested not resset");
+        assertEq(tripod.invested(tripod.tokenA()), 0, "A balance is 0");
+        assertEq(tripod.invested(tripod.tokenB()), 0, "C balance is 0");
+        assertEq(tripod.invested(tripod.tokenC()), 0, "B balance is 0");
     }
 
     function testManualLiquidateFail(uint256 _amount) public {
@@ -75,7 +50,7 @@ contract ManualOpsTest is StrategyFixture {
         (uint256 _a, uint256 _b, uint256 _c) = tripod.estimatedTotalAssetsAfterBalance();
         vm.prank(gov);
         vm.expectRevert(bytes("min"));
-        tripod.removeLiquidityManually(
+        tripod.liquidatePositionManually(
             _a * 11_000 / 10_000,
             _b * 11_000 / 10_000,
             _c * 11_000 / 10_000

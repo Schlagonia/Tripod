@@ -877,13 +877,15 @@ abstract contract Tripod {
         uint256 expectedBalanceC
     ) external onlyVaultManagers {
         dontInvestWant = true;
-        uint256 _a = balanceOfA();
-        uint256 _b = balanceOfB();
-        uint256 _c = balanceOfC();
-        _closeAllPositions();
-        require(expectedBalanceA <= balanceOfA() - _a &&
-                    expectedBalanceB <= balanceOfB() - _b &&
-                        expectedBalanceC <= balanceOfC() - _c, "min");
+        _withdrawLP(balanceOfStake());
+        //Burn lp will handle min Out checks
+        _burnLP(
+            balanceOfPool(),
+            expectedBalanceA,
+            expectedBalanceB,
+            expectedBalanceC
+        );
+
         // reset invested balances or we wont be able to open up a position again
         invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
         investedWeight[tokenA] = investedWeight[tokenB] = investedWeight[tokenC] = 0;
@@ -897,6 +899,10 @@ abstract contract Tripod {
         _returnLooseToProviders();
     }
 
+    function manualWithdraw(uint256 _amount) external onlyVaultManagers {
+        _withdrawLP(_amount);
+    }
+
     /*
      * @notice
      *  Function available to vault managers closing the LP position manually
@@ -905,24 +911,20 @@ abstract contract Tripod {
      * @param expectedBalanceB, expected balance of tokenB to receive
      * @param expectedBalanceC, expected balance of tokenC to receive
      */
-    function removeLiquidityManually(
+    function burnLiquidityManually(
+        uint256 amount,
         uint256 expectedBalanceA,
         uint256 expectedBalanceB,
         uint256 expectedBalanceC
     ) external virtual onlyVaultManagers {
         dontInvestWant = true;
-        _withdrawLP(balanceOfStake());
         //Burn lp will handle min Out checks
         _burnLP(
-            balanceOfPool(),
+            amount,
             expectedBalanceA,
             expectedBalanceB,
             expectedBalanceC
         );
-
-        // reset invested balances or we wont be able to open up a position again
-        invested[tokenA] = invested[tokenB] = invested[tokenC] = 0;
-        investedWeight[tokenA] = investedWeight[tokenB] = investedWeight[tokenC] = 0;
     }
 
     /*
