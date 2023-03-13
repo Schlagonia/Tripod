@@ -25,7 +25,7 @@ contract UnwindTest is StrategyFixture {
         skip(7 hours);
 
         uint256 lpBalance = tripod.totalLpBalance(); 
-        console.log("Goottta ");
+        
         vm.prank(gov);
         tripod.manualWithdraw(lpBalance / 2);
 

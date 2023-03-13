@@ -899,6 +899,12 @@ abstract contract Tripod {
         _returnLooseToProviders();
     }
 
+    /*
+    * @notice 
+    *   Function available to vault managers to manually withdraw the LP token
+    *   from the staking contract and do nothing else.
+    * @param _amount, The amount of the LP token to pull from the staking contract
+     */
     function manualWithdraw(uint256 _amount) external onlyVaultManagers {
         _withdrawLP(_amount);
     }
