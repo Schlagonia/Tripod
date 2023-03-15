@@ -95,4 +95,26 @@ contract UnwindTest is StrategyFixture {
             );
     }
 
+    function testWtithdrawToOneToken(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmt && _amount < maxFuzzAmt);
+        depositAllVaultsAndHarvest(_amount);
+
+        uint256 withdraw = _amount / 2;
+
+        vm.prank(gov);
+        tripod.manualWithdraw(withdraw);
+
+        uint256 tokenIndex = _amount % 3;
+
+        IERC20 token = assetFixtures[tokenIndex].want;
+
+        uint256 before = token.balanceOf(address(tripod));
+
+        vm.prank(gov);
+        tripod.withdrawToOneToken(withdraw, tokenIndex);
+
+        assertRelApproxEq(token.balanceOf(address(tripod)) - before, withdraw / 10 ** (18 - IERC20Extended(address(token)).decimals()), DELTA);
+        assertEq(tripod.balanceOfPool(), 0);
+    }
+
 }
