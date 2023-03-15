@@ -283,4 +283,37 @@ library BalancerHelper {
         limits[0] = int(balance);
     }
 
+    function getWithdrawToOneTokenVariables(
+        uint256 _amount, 
+        IBalancerTripod.PoolInfo memory _poolInfo
+    ) public view returns (IBalancerVault.BatchSwapStep[] memory swaps, IAsset[] memory assets, int[] memory limits) {
+        IBalancerTripod tripod = IBalancerTripod(address(this));
+        swaps = new IBalancerVault.BatchSwapStep[](2);
+        assets = new IAsset[](3);
+        limits = new int[](3);
+
+        swaps[0] = IBalancerVault.BatchSwapStep(
+            tripod.poolId(),
+            0,  //Index to use for toSwapTo
+            1,  //Index to use for bb-toSwapTo
+            _amount,
+            abi.encode(0)
+        );
+
+        swaps[1] = IBalancerVault.BatchSwapStep(
+            _poolInfo.poolId,
+            1,  //Index to use for bb-toSwapTo
+            2,  //Index to use for the main lp token
+            0, 
+            abi.encode(0)
+        );
+
+        assets[0] = IAsset(tripod.pool());
+        assets[1] = IAsset(_poolInfo.bbPool);
+        assets[2] = IAsset(_poolInfo.token);
+
+        //Only need to set the toSwapTo balance goin in
+        limits[0] = int(_amount);
+    }
+
 }

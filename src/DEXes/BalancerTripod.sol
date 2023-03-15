@@ -510,6 +510,22 @@ contract BalancerTripod is Tripod {
         }
     }
 
+    function withdrawToOneToken(uint256 _amount, uint256 _index) external onlyVaultManagers {
+        (IBalancerVault.BatchSwapStep[] memory swaps, 
+            IAsset[] memory assets, 
+                int[] memory limits) = 
+                    BalancerHelper.getWithdrawToOneTokenVariables(_amount, poolInfo[_index]);
+
+        balancerVault.batchSwap(
+            IBalancerVault.SwapKind.GIVEN_IN, 
+            swaps, 
+            assets, 
+            _getFundManagement(), 
+            limits, 
+            block.timestamp
+        );
+    }
+
     /*
     * @notice
     *   Function available internally to create an lp during tend
